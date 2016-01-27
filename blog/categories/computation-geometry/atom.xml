@@ -4,7 +4,7 @@
   <title><![CDATA[Category: computation geometry | The Sandbox]]></title>
   <link href="http://sandmman.github.io/blog/categories/computation-geometry/atom.xml" rel="self"/>
   <link href="http://sandmman.github.io/"/>
-  <updated>2016-01-26T19:58:55-05:00</updated>
+  <updated>2016-01-26T20:01:54-05:00</updated>
   <id>http://sandmman.github.io/</id>
   <author>
     <name><![CDATA[Aaron Liberatore]]></name>
@@ -24,7 +24,7 @@
 
 <p>Anyway, once having discovered these poor souls have never experienced that classic sense of nostalgia, I had my direction. And so, though it still could use some tweaks I think it&rsquo;s turned out pretty well.</p>
 
-<p><img src="../images/Asteroid.png" alt="Alt text" /></p>
+<p><img src="../images/Asteroid.jpg" alt="Alt text" /></p>
 
 <p>It&rsquo;s got that classic look I wanted, but more importantly the odd asteroid shapes do, in fact, destroy your ship when and only when a point on your ship touches one on the asteroid. Now some of you may laugh. It seems obvious. Of course, that&rsquo;s how it should work, yet I&rsquo;ve seen it before and I&rsquo;ll see again where a game improperly creates its objects or tests collisions improperly such that collisions that occur on screen are not actually reflected.</p>
 
