@@ -1,125 +1,65 @@
 
-<!DOCTYPE html>
-<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
-<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
-<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<!DOCTYPE HTML>
+<html lang="en-GB">
 <head>
-  <meta charset="utf-8">
-  <title>Asteroids - The Sandbox</title>
-  <meta name="author" content="Aaron Liberatore">
+	<meta charset="utf-8">
+	<title>Asteroids  | The Sandbox</title>
 
-  
-  <meta name="description" content="Tweet Asteroids Jan 25th, 2016 8:23 am computation geometry, games Asteroids So, I&rsquo;ve recently developed an interest in Applied Computational &hellip;">
-  
+	<meta name="author" content="Aaron Liberatore">
 
-  <!-- http://t.co/dKP3o1e -->
-  <meta name="HandheldFriendly" content="True">
-  <meta name="MobileOptimized" content="320">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Asteroids So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the &hellip;"> <meta name="keywords" content="">
 
-  
-  <link rel="canonical" href="http://sandmman.github.io/blog/2016/01/25/Asteroids-Concave%20point%20intersection/">
-  <link href="/favicon.png" rel="icon">
-  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <script src="/javascripts/modernizr-2.0.js"></script>
-  <script src="/javascripts/ender.js"></script>
-  <script src="/javascripts/octopress.js" type="text/javascript"></script>
-  <link href="/atom.xml" rel="alternate" title="The Sandbox" type="application/atom+xml">
-  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
-<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
-<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
-  
+	<link href="/atom.xml" rel="alternate" title="The Sandbox" type="application/atom+xml">
+	<link rel="canonical" href="">
+	<link href="/favicon.png" rel="shortcut icon">
+	<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+	<!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+	<script src="//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+	
 
 </head>
 
-<body >
-  <header role="banner" id="sidebar">
-    <!-- Logo -->
-<aside id="logo" class="clearfix">
-  <div class="clearfix">
-    <a href="/">The Sandbox</a>
-  </div>
-</aside>
-
-<ul id="menu">
-
-  <li class="title">
-    <h1 id="title"><a href="/">The Sandbox</a></h1>
-  </li>
 
 
-  <li class="link">
-    <a href="/about/">about</a>
-  </li>
-
-
-  <li class="link rss">
-    <a href="/atom.xml">rss feed</a>
-  </li>
+<body>
+	<header id="header" class="inner"><h1><a href="/">The Sandbox</a></h1>
+<span class="tagline"></span>
+<nav id="main-nav"><ul class="main-nav">
+	<li><a href="/">Blog</a></li>
+	<li><a href="/about">About</a></li>
+	<li><a href="/archives">Archives</a></li>
 </ul>
+</nav> 
+<nav id="mobile-nav">
+ 	<div class="alignleft menu"> 
+ 		<a class="button">Menu</a> 
+ 		<div class="container"><ul class="main-nav">
+	<li><a href="/">Blog</a></li>
+	<li><a href="/about">About</a></li>
+	<li><a href="/archives">Archives</a></li>
+</ul>
+</div> 
+ 	</div> 
+ </nav> 
 
 
-<form action="https://www.google.com/search" method="get">
-  <fieldset role="search">
-    <input type="hidden" name="q" value="site:sandmman.github.io" />
-    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
-  </fieldset>
-</form>
+</header>
 
-
-<!-- Octopress Love -->
-<aside id="octopress_linkback">
-  <a href="http://octopress.org/">
-    <span class="unicode_square">
-      <span class="unicode_circle">
-        &nbsp;
-      </span>
-    </span>
-    <span class="octopress">Powered by Octopress</span>
-  </a>
-</aside>
-
-  </header>
-  <section id="main">
-    <article class="post">
-  <div class="sharing-box">
-  
-  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://sandmman.github.io/blog/2016/01/25/Asteroids-Concave%20point%20intersection/" data-via="" data-counturl="http://sandmman.github.io/blog/2016/01/25/Asteroids-Concave%20point%20intersection/" data-size="large">Tweet</a>
-  
-  
-  
-</div>
-
-  
-  <header>
-    
-      <h2 class="entry-title">Asteroids</h2>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-01-25T08:23:00-05:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>25</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>8:23 am</span></time>
+	<div id="content" class="inner"><article class="post">
+	<header>
 		
-
-<span class="categories">
-  
-    <a class='category' href='/blog/categories/computation-geometry/'>computation geometry</a>, <a class='category' href='/blog/categories/games/'>games</a>
-  
-</span>
+		<h2 class="title">Asteroids</h2>
+		
+		<div class="meta date">
 
 
-        
-      </p>
-    
-  </header>
 
+<time class='entry-date' datetime='2016-01-25T08:23:00-05:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>25</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span></time></div>
+	</header>
 
-<h1>Asteroids</h1>
+	<div class="entry-content"><h1>Asteroids</h1>
 
 <p>So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the math/algorithms would be some simple classic arcade game. Of course, my first thought was Asteroids, which surprisingly several of my friends haven&rsquo;t even hear of. Kind of ridiculous if ya ask me! Its a classic!</p>
 
@@ -142,38 +82,62 @@
 <p>This reduces the problem to an O(n) operation that checks each line segment to see if it passes through our horizontal line by checking to see if Ay is on one side and By is on the other.</p>
 
 <p>I&rsquo;m not going to go into it here, but in the event you have a concave polygon it can be done in O(lgn)!!</p>
+</div>
+
+
+	
+	</article>
+
+	
+	<div class="share">
+	  <!-- <ul> -->
+	  <!--   <li>
+  <a href="https://twitter.com/intent/tweet?text=Asteroids by @&url=http://sandmman.github.io/blog/2016/01/25/Asteroids-Concave%20point%20intersection/" title="Share Asteroids on Twitter">
+    <img src="/images/social/twitter.png" />
+  </a>
+</li>
+ -->
+	  <!--   <li>
+  <a href="https://www.facebook.com/sharer.php?u=http://sandmman.github.io/blog/2016/01/25/Asteroids-Concave%20point%20intersection/" title="Share Asteroids on Facebook">
+    <img src="/images/social/facebook.png" />
+  </a>
+</li>
+ -->
+	  <!--   <li>
+  <a href="https://plus.google.com/share?url=http://sandmman.github.io/blog/2016/01/25/Asteroids-Concave%20point%20intersection/" title="Share Asteroids on Google Plus">
+    <img src="/images/social/google.png" />
+  </a>
+</li>
+ -->
+	  <!-- </ul> -->
+	</div>
 
 
 
-</article>
+</div>
+	<footer id="footer" class="inner"><br>
+<br>
+<br>
+<br>
+&copy; 2013-2016
 
+    Aaron Liberatore
 
-    <nav role="navigation" id="pagination">
-
-</nav>
-  </section>
-  
-
-  
-
-
-
-
+</footer>
+	<script src="/javascripts/slash.js"></script>
+<script src="/javascripts/hyphenator.js"></script>
 
 
 
-  <script type="text/javascript">
-    (function(){
-      var twitterWidgets = document.createElement('script');
-      twitterWidgets.type = 'text/javascript';
-      twitterWidgets.async = true;
-      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
-      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
-    })();
-  </script>
 
 
 
 
 </body>
+<script>
+  $(document).ready(function() {
+  // Make images center
+  $('p:has(img)').css('text-align', 'center');
+  });
+</script>
 </html>
