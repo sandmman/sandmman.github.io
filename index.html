@@ -82,7 +82,9 @@
 
 <p><img src="../images/concave_polygon_point.jpg" title="Concave Polygon" alt="Alt text" /></p>
 
-<p>For a convex polygon like the one above, the best way to solve this we visually send a parallel line from the point both directions. Now, we can simply count the number of times the lines crosses a line segment of the polygon to determine its location. If it crosses an even number it is outside the polygon and odd when its inside.</p>
+<p>For a convex polygon like the one above, the best way to solve this is by visually sending a horizontal line from the point both directions. Now, we can simply count the number of times the lines crosses a line segment of the polygon in each direction. If there are an odd number of nodes on each side of the test point, then it is inside the polygon; if there are an even number of nodes on each side of the test point, then it is outside the polygon. This can intuitively be thought of as the point having to enter/exit the polygon.</p>
+
+<p>Alternatively, you could just send a single ray in one direction and count those line crossings where the same odd number means its inside and even outside.</p>
 
 <p>This reduces the problem to an O(n) operation that checks each line segment to see if it passes through our horizontal line by checking to see if Ay is on one side and By is on the other.</p>
 
