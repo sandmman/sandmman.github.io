@@ -5,11 +5,11 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Intro - The Sandbox</title>
+  <title>Asteroids - The Sandbox</title>
   <meta name="author" content="Aaron Liberatore">
 
   
-  <meta name="description" content="Tweet Intro Jan 25th, 2016 8:23 am self Asteroids So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a &hellip;">
+  <meta name="description" content="Tweet Asteroids Jan 25th, 2016 8:23 am computation geometry, games Asteroids So, I&rsquo;ve recently developed an interest in Applied Computational &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -94,7 +94,7 @@
   
   <header>
     
-      <h2 class="entry-title">Intro</h2>
+      <h2 class="entry-title">Asteroids</h2>
     
     
       <p class="meta">
@@ -108,7 +108,7 @@
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/self/'>self</a>
+    <a class='category' href='/blog/categories/computation-geometry/'>computation geometry</a>, <a class='category' href='/blog/categories/games/'>games</a>
   
 </span>
 
@@ -119,7 +119,7 @@
   </header>
 
 
-<h3>Asteroids</h3>
+<h1>Asteroids</h1>
 
 <p>So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the math/algorithms would be some simple classic arcade game. Of course, my first thought was Asteroids, which surprisingly several of my friends haven&rsquo;t even hear of. Kind of ridiculous if ya ask me! Its a classic!</p>
 
@@ -128,6 +128,8 @@
 <p><img src="../images/asteroid.png" alt="Alt text" /></p>
 
 <p>It&rsquo;s got that classic look I wanted, but more importantly the odd asteroid shapes do, in fact, destroy your ship when and only when a point on your ship touches one on the asteroid. Now some of you may laugh. It seems obvious. Of course, that&rsquo;s how it should work, yet I&rsquo;ve seen it before and I&rsquo;ll see again where a game improperly creates its objects or tests collisions improperly such that collisions that occur on screen are not actually reflected.</p>
+
+<h3>Math</h3>
 
 <p>So, lets look at a little math to solve some of these problems. Aside from lazily using a bad test point (such as inside the space ship not on its edges), a common occurrence is visually showing a polygon, while internally storing a subsection of points to simplify the testing. It bugs the crap out of me, so lets to it right!</p>
 

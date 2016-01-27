@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[The Sandbox]]></title>
-  <link href="http://sandmman.github.io/atom.xml" rel="self"/>
+  <title><![CDATA[Category: computation geometry | The Sandbox]]></title>
+  <link href="http://sandmman.github.io/blog/categories/computation-geometry/atom.xml" rel="self"/>
   <link href="http://sandmman.github.io/"/>
   <updated>2016-01-26T19:32:17-05:00</updated>
   <id>http://sandmman.github.io/</id>
