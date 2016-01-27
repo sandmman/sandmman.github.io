@@ -4,13 +4,167 @@
   <title><![CDATA[The Sandbox]]></title>
   <link href="http://http://sandmman.github.io/atom.xml" rel="self"/>
   <link href="http://http://sandmman.github.io/"/>
-  <updated>2016-01-26T20:16:36-05:00</updated>
+  <updated>2016-01-26T20:25:32-05:00</updated>
   <id>http://http://sandmman.github.io/</id>
   <author>
     <name><![CDATA[Aaron Liberatore]]></name>
     
   </author>
 
+  
+  <entry>
+    
+    <title type="html"><![CDATA[Jenkins CI]]></title>
+    <link href="http://sandmman.github.io/blog/2016/01/25/Jenkins/"/>
+    
+    <updated>2016-01-25T08:23:00-05:00</updated>
+    <id>http://http://sandmman.github.io/blog/2016/01/25/Jenkins</id>
+    
+      <content type="html"><![CDATA[<p>Add some pictures dummy! Visual people like to learn too!</p>
+
+<h1>Jenkins Documentation</h1>
+
+<p>Te team needed a continuous integration setup to trigger builds for new pull requests, so got to dive into some Jenkins CI the past couple weeks and I got say it wasn&rsquo;t all that pleasant. While Jenkins can be an incredibly powerful tool, its been the bane of my existence far too often and usually its a damn checkbox or something of that sort. With that said, I figured I would build on the documentation out there, especially for those out there stuck with windows (You poor souls).</p>
+
+<p>TL;DR This contains documentation for our Jenkins Continuous Integration setup. We have Jenkins running through a Windows VM and using webhooks to build on pull requests.</p>
+
+<h2>What you&rsquo;ll need</h2>
+
+<ul>
+<li>Jenkins CI</li>
+<li>Git for Windows</li>
+<li>Access to the Internet</li>
+<li>The Git Plugin</li>
+<li>The GitHub Plugin (Build on Push)</li>
+<li>The GitHub Pull Request Plugin (Optional)</li>
+<li>Jenkins Github user account (Optional)</li>
+<li>Keil (Optional)</li>
+<li>A windows box - We use Parallels on OS X (Optional)</li>
+</ul>
+
+
+<h3>Keil (Optional)</h3>
+
+<p>Keil is a compiler for embedded devices and only runs on windows.
+We are using Keil as part of our build phase that Jenkins will facilitate, so this is more for me than anything. The installation is free and easy. Follow the instructions on this <a href="http://www2.keil.com/stmicroelectronics-stm32/mdk">page</a>. Ensure you take the time to install the serial number so that you can build.</p>
+
+<h3>Git Installation</h3>
+
+<p>You’ll need to install git on your Windows machine so that Jenkins can eventually pull down or commit to your git repositories. Git for windows can be download through <a href="https://msysgit.github.io/">mysisGit</a>.</p>
+
+<p>On the <em>Adjusting your PATH Environment</em> page, ensure you select one of the options for the command prompt and once downloaded restart the system.</p>
+
+<h3>Jenkins</h3>
+
+<p>You can download the Jenkins windows package on there official website <a href="https://jenkins-ci.org/">here</a> and then can access the server through <a href="http://localhost:8080/">http://localhost:8080/</a></p>
+
+<h3>Plugins</h3>
+
+<p>Once you can access your Jenkins console, go to Manage Jenkins -> Manage Plugins from the home screen.</p>
+
+<p>Open the <code>Available</code> tab and find the Plugins
+- Git Plugin
+- Github Plugin
+- Github Pull Request Plugin</p>
+
+<h3>Initial Configuration</h3>
+
+<p>Go to <code>Manage Jenkins</code> -> <code>Configure</code> from the home screen.</p>
+
+<p>There are many customizable features here, but for our purposes be sure to set the URL the Jenkins can be reached at under <code>Jenkins Location</code>, to setup the git config settings under <code>Git Plugin</code>, and to select Manually manage hook URLs under <code>Github Web Hooks.</code> You may also want to setup the email notifications in order to receive info on build status and build results (Totally up to you!)</p>
+
+<p>If your planning on using the <code>Github Pull Request Plugin</code> like we are, read on! Otherwise, skip to Job Setup.</p>
+
+<p>Find the <code>Github Pull Request Plugin</code> heading.</p>
+
+<p>Unless using Github Enterprise, leave the Server API URL as is. Then, create a shared secret that will be linked to the pull request webhook that we&rsquo;ll setup later on, so make sure to remember it! Setup the credentials for the account that will be accessing the repository. For the pull request plugin to work, this user will HAVE to have push, pull, and admin rights to the repo. Here would be the place to use that optional Github Jenkins bot user we mentioned! It&rsquo;s a bit safer and nice to have a build account that doesn&rsquo;t rely on any single person in the company or project.</p>
+
+<p>Not sure if this user has the correct access rights? Click on test credentials and it&rsquo;ll help you check!</p>
+
+<p>Below this, there are various personalized settings for your enjoyment.</p>
+
+<h3>Job Setup</h3>
+
+<p>The official docs provide a good level of detail on how to configure a basic Jenkins job, so I’d recommend following them <a href="https://wiki.jenkins-ci.org/display/JENKINS/Building+a+software+project">here</a>. If anything&rsquo;s unclear the ?&rsquo;s on the side generally provide decent clarification.</p>
+
+<p>Be sure to do the following:
+1. Set the Github Project name
+2. Under <code>Source Code Management</code> select Git
+  - Specify the Repository
+  - If you just want to build PRs, in advanced set refspec to +refs/pull/<em>:refs/remotes/origin/pr/</em>
+  - If you want to build PRs and branches, in advanced set refspec to +refs/heads/<em>:refs/remotes/origin/</em>
+  - Set the branch specifier to ${sha1}
+3. Under <code>Build Triggers</code> select either &lsquo;Build on push&rsquo; or &lsquo;Github Pull Request Builder&rsquo;
+  - For the Pull Request Builder,
+    - Setup the admin list (github usernames separated by a space)
+    - Select &lsquo;use github webhooks for build triggering&rsquo;.
+    - Feel free to personalize the rest for security and whatnot. Additional information or clarification can be found <a href="https://github.com/janinko/ghprb">here</a>
+4. Under <code>Build</code>, setup your testing procedures.</p>
+
+<p>  Note: For our project, it was easiest to call Keil from a batch script, but obviously methods and necessary build steps will vary.</p>
+
+<p>  Add Build Step select &lsquo;Execute Windows Batch Script&rsquo; and &lsquo;Set build status to pending&rsquo;
+5. Under <code>Post-Build Actions</code> select optional actions. Below are the two we selected
+  - Email Notifications - remember to make sure this is also set up in the general configuration page
+  - Build Status on Github Commit.</p>
+
+<p>Batch script we used to call keil. Nothing special, just a whole lot of pain in the ass paths</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='Batch'><span class='line'><span class="k">cd</span> c:\
+</span><span class='line'>pushd <span class="s2">&quot;C:Keil_v5\UV4\&quot;</span>
+</span><span class='line'><span class="k">call</span> UV<span class="m">4</span> -b <span class="s2">&quot;C:\Program Files (x86)\Jenkins\jobs\Athena\workspace\App\MDK-ARM\App.uvprojx&quot;</span> -o <span class="s2">&quot;C:\Program Files (x86)\Jenkins\jobs\Athena\log.txt&quot;</span>
+</span><span class='line'>popd
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>Post Receive Hook</h3>
+
+<p>Finally you’ll need to setup your Git repository to initialize a build each time you push to your repository or receive a pull request. In order for Github and Jenkins to communicate you must have the service connected to the internet. This could be an external IP address or a simpler port-forwarding service like <a href="https://ngrok.com/">Ngrok</a>, however we chose to set up an external IP in order to ensure we have full control over security measures. Ngrok really is a cool service if anyone&rsquo;s looking to just test something out, but if needed for substantial amounts of forwards to confidential information or private networks, its probably better to keep your own keys to the car instead of giving them to the valet.</p>
+
+<p>Again, if using a dedicated Jenkins user it must be either the repo owner or have “Push, Pull &amp; Administrative” permissions.</p>
+
+<h5>On Jenkins:</h5>
+
+<ul>
+<li>Ensure the Jenkins URL is specified in the general configurations page</li>
+</ul>
+
+
+<h5>On Github:</h5>
+
+<ul>
+<li>Go to the repository&rsquo;s page</li>
+<li>Select <code>Settings</code>-> <code>Webhooks &amp; Services</code></li>
+<li>To trigger a build on a push or a pull request each has its own hook setup. From what I have read, it may not be possible to set both up simultaneously for the the same job.
+
+<ul>
+<li>If trying to set up &lsquo;build on push&rsquo; use the &ldquo;Jenkins (Github plugin)&rdquo; under the services drop down then input the associated URL. Something like <a href="http://server-hostname/github-webhook/">http://server-hostname/github-webhook/</a></li>
+<li>If setting up &lsquo;build on pull request&rsquo; add a webhook, instead
+
+<ul>
+<li>Set the URL of Jenkins. Something like <a href="http://server-hostname/ghprbhook/">http://server-hostname/ghprbhook/</a></li>
+<li>Set content type to application/x-www-form-urlencoded</li>
+<li>Enter the secret you created earlier</li>
+<li>Select trigger on individual events to &lsquo;pull request&rsquo; and &lsquo;issue comment&rsquo;</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+
+<h3>Access Rights</h3>
+
+<p>On each build, Jenkins clones the updated repository to its workspace directory, which then Keil or another build services can use for its build. In order for Keil and the batch script to read and write within the workspace directory, you must ensure the user has read/write access for these folders.</p>
+
+<p>Obviously a user with admin rights won&rsquo;t have an issue, but other users may want to check this as it can arise. Navigate to the Jenkins project directory and into the newly created job directory, right click on the folder -> properties -> security -> edit, then adjust the user settings to have read and write permission within the folder.</p>
+]]></content>
+      
+  </entry>
   
   <entry>
     
