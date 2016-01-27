@@ -4,7 +4,7 @@
   <title><![CDATA[Category: jenkins ci | The Sandbox]]></title>
   <link href="http://sandmman.github.io/blog/categories/jenkins-ci/atom.xml" rel="self"/>
   <link href="http://sandmman.github.io/"/>
-  <updated>2016-01-26T20:25:32-05:00</updated>
+  <updated>2016-01-26T21:56:15-05:00</updated>
   <id>http://sandmman.github.io/</id>
   <author>
     <name><![CDATA[Aaron Liberatore]]></name>
@@ -15,9 +15,9 @@
   
   <entry>
     <title type="html"><![CDATA[Jenkins CI]]></title>
-    <link href="http://sandmman.github.io/blog/2016/01/25/Jenkins/"/>
-    <updated>2016-01-25T08:23:00-05:00</updated>
-    <id>http://sandmman.github.io/blog/2016/01/25/Jenkins</id>
+    <link href="http://sandmman.github.io/blog/2015/06/15/Jenkins/"/>
+    <updated>2015-06-15T08:23:00-04:00</updated>
+    <id>http://sandmman.github.io/blog/2015/06/15/Jenkins</id>
     <content type="html"><![CDATA[<p>Add some pictures dummy! Visual people like to learn too!</p>
 
 <h1>Jenkins Documentation</h1>

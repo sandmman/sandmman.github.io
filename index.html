@@ -7,7 +7,7 @@
 
 	<meta name="author" content="Aaron Liberatore">
 
-<meta name="description" content="Add some pictures dummy! Visual people like to learn too! Jenkins Documentation Te team needed a continuous integration setup to trigger builds for &hellip;"> <meta name="keywords" content="">
+<meta name="description" content="Asteroids So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the &hellip;"> <meta name="keywords" content="">
 
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
@@ -54,7 +54,7 @@
 	<header>
 		<h2 class="title">
 			
-			<a href="/blog/2016/01/25/Jenkins/">Jenkins CI</a>
+			<a href="/blog/2016/01/25/Asteroids-Concave%20point%20intersection/">Asteroids</a>
 			
 		</h2>
 		<div class="meta date">
@@ -62,6 +62,55 @@
 
 
 <time class='entry-date' datetime='2016-01-25T08:23:00-05:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>25</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span></time></div>
+	</header>
+	<div class="entry-content">
+		<h1>Asteroids</h1>
+
+<p>So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the math/algorithms would be some simple classic arcade game. Of course, my first thought was Asteroids, which surprisingly several of my friends haven&rsquo;t even hear of. Kind of ridiculous if ya ask me! Its a classic!</p>
+
+<p>Anyway, once having discovered these poor souls have never experienced that classic sense of nostalgia, I had my direction. And so, though it still could use some tweaks I think it&rsquo;s turned out pretty well.</p>
+
+<p><img src="../images/Asteroid.jpg" alt="Alt text" /></p>
+
+<p>It&rsquo;s got that classic look I wanted, but more importantly the odd asteroid shapes do, in fact, destroy your ship when and only when a point on your ship touches one on the asteroid. Now some of you may laugh. It seems obvious. Of course, that&rsquo;s how it should work, yet I&rsquo;ve seen it before and I&rsquo;ll see again where a game improperly creates its objects or tests collisions improperly such that collisions that occur on screen are not actually reflected.</p>
+
+<h3>Math</h3>
+
+<p>So, lets look at a little math to solve some of these problems. Aside from lazily using a bad test point (such as inside the space ship not on its edges), a common occurrence is visually showing a polygon, while internally storing a subsection of points to simplify the testing. It bugs the crap out of me, so lets to it right!</p>
+
+<p>Let&rsquo;s say you have an asteroid that looks like the one below and your testing whether that red bullet is a hit or a miss.</p>
+
+<p><img src="../images/concave_polygon_point.jpg" title="Concave Polygon" alt="Alt text" /></p>
+
+<p>For a convex polygon like the one above, the best way to solve this is by visually sending a horizontal line from the point both directions. Now, we can simply count the number of times the lines crosses a line segment of the polygon in each direction. If there are an odd number of nodes on each side of the test point, then it is inside the polygon; if there are an even number of nodes on each side of the test point, then it is outside the polygon. This can intuitively be thought of as the point having to enter/exit the polygon.</p>
+
+<p>Alternatively, you could just send a single ray in one direction and count those line crossings where the same odd number means its inside and even outside.</p>
+
+<p>This reduces the problem to an O(n) operation that checks each line segment to see if it passes through our horizontal line by checking to see if Ay is on one side and By is on the other.</p>
+
+<p>I&rsquo;m not going to go into it here, but in the event you have a concave polygon it can be done in O(lgn)!!</p>
+
+		
+		
+	</div>
+
+
+	
+	</article>
+
+
+    <article class="post">
+	<header>
+		<h2 class="title">
+			
+			<a href="/blog/2015/06/15/Jenkins/">Jenkins CI</a>
+			
+		</h2>
+		<div class="meta date">
+
+
+
+<time class='entry-date' datetime='2015-06-15T08:23:00-04:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span></time></div>
 	</header>
 	<div class="entry-content">
 		<p>Add some pictures dummy! Visual people like to learn too!</p>
@@ -206,55 +255,6 @@ We are using Keil as part of our build phase that Jenkins will facilitate, so th
 <p>On each build, Jenkins clones the updated repository to its workspace directory, which then Keil or another build services can use for its build. In order for Keil and the batch script to read and write within the workspace directory, you must ensure the user has read/write access for these folders.</p>
 
 <p>Obviously a user with admin rights won&rsquo;t have an issue, but other users may want to check this as it can arise. Navigate to the Jenkins project directory and into the newly created job directory, right click on the folder -> properties -> security -> edit, then adjust the user settings to have read and write permission within the folder.</p>
-
-		
-		
-	</div>
-
-
-	
-	</article>
-
-
-    <article class="post">
-	<header>
-		<h2 class="title">
-			
-			<a href="/blog/2016/01/25/Asteroids-Concave%20point%20intersection/">Asteroids</a>
-			
-		</h2>
-		<div class="meta date">
-
-
-
-<time class='entry-date' datetime='2016-01-25T08:23:00-05:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>25</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span></time></div>
-	</header>
-	<div class="entry-content">
-		<h1>Asteroids</h1>
-
-<p>So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the math/algorithms would be some simple classic arcade game. Of course, my first thought was Asteroids, which surprisingly several of my friends haven&rsquo;t even hear of. Kind of ridiculous if ya ask me! Its a classic!</p>
-
-<p>Anyway, once having discovered these poor souls have never experienced that classic sense of nostalgia, I had my direction. And so, though it still could use some tweaks I think it&rsquo;s turned out pretty well.</p>
-
-<p><img src="../images/Asteroid.jpg" alt="Alt text" /></p>
-
-<p>It&rsquo;s got that classic look I wanted, but more importantly the odd asteroid shapes do, in fact, destroy your ship when and only when a point on your ship touches one on the asteroid. Now some of you may laugh. It seems obvious. Of course, that&rsquo;s how it should work, yet I&rsquo;ve seen it before and I&rsquo;ll see again where a game improperly creates its objects or tests collisions improperly such that collisions that occur on screen are not actually reflected.</p>
-
-<h3>Math</h3>
-
-<p>So, lets look at a little math to solve some of these problems. Aside from lazily using a bad test point (such as inside the space ship not on its edges), a common occurrence is visually showing a polygon, while internally storing a subsection of points to simplify the testing. It bugs the crap out of me, so lets to it right!</p>
-
-<p>Let&rsquo;s say you have an asteroid that looks like the one below and your testing whether that red bullet is a hit or a miss.</p>
-
-<p><img src="../images/concave_polygon_point.jpg" title="Concave Polygon" alt="Alt text" /></p>
-
-<p>For a convex polygon like the one above, the best way to solve this is by visually sending a horizontal line from the point both directions. Now, we can simply count the number of times the lines crosses a line segment of the polygon in each direction. If there are an odd number of nodes on each side of the test point, then it is inside the polygon; if there are an even number of nodes on each side of the test point, then it is outside the polygon. This can intuitively be thought of as the point having to enter/exit the polygon.</p>
-
-<p>Alternatively, you could just send a single ray in one direction and count those line crossings where the same odd number means its inside and even outside.</p>
-
-<p>This reduces the problem to an O(n) operation that checks each line segment to see if it passes through our horizontal line by checking to see if Ay is on one side and By is on the other.</p>
-
-<p>I&rsquo;m not going to go into it here, but in the event you have a concave polygon it can be done in O(lgn)!!</p>
 
 		
 		
