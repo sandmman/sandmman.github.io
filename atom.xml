@@ -4,7 +4,7 @@
   <title><![CDATA[The Sandbox]]></title>
   <link href="http://http://sandmman.github.io/atom.xml" rel="self"/>
   <link href="http://http://sandmman.github.io/"/>
-  <updated>2016-01-26T21:56:15-05:00</updated>
+  <updated>2016-02-03T18:02:37-05:00</updated>
   <id>http://http://sandmman.github.io/</id>
   <author>
     <name><![CDATA[Aaron Liberatore]]></name>
@@ -22,9 +22,9 @@
     
       <content type="html"><![CDATA[<h1>Asteroids</h1>
 
-<p>So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the math/algorithms would be some simple classic arcade game. Of course, my first thought was Asteroids, which surprisingly several of my friends haven&rsquo;t even hear of. Kind of ridiculous if ya ask me! Its a classic!</p>
+<p>So, I&rsquo;ve recently developed an interest in Applied Computational Geometry and figured a great way to being playing around with the math/algorithms would be some simple classic arcade game. Of course, my first thought was Asteroids, which surprisingly several of my friends haven&rsquo;t even heard of. Kind of ridiculous if ya ask me! Its a classic!</p>
 
-<p>Anyway, once having discovered these poor souls have never experienced that classic sense of nostalgia, I had my direction. And so, though it still could use some tweaks I think it&rsquo;s turned out pretty well.</p>
+<p>Anyway, once having discovered these poor souls have never experienced that classic sense of nostalgia, I had my direction. And so, though it still could use some tweaks I think it&rsquo;s turned out pretty well using my own sudo-game engine and was a ton of fun.</p>
 
 <p><img src="../images/Asteroid.jpg" alt="Alt text" /></p>
 
