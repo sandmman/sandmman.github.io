@@ -4,13 +4,118 @@
   <title><![CDATA[TheSandbox]]></title>
   <link href="http://http://sandmman.github.io/atom.xml" rel="self"/>
   <link href="http://http://sandmman.github.io/"/>
-  <updated>2016-02-03T18:57:14-05:00</updated>
+  <updated>2016-02-06T15:22:49-05:00</updated>
   <id>http://http://sandmman.github.io/</id>
   <author>
     <name><![CDATA[Aaron Liberatore]]></name>
     
   </author>
 
+  
+  <entry>
+    
+    <title type="html"><![CDATA[Rustenums]]></title>
+    <link href="http://sandmman.github.io/blog/2016/02/05/RustEnums/"/>
+    
+    <updated>2016-02-05T00:00:00-05:00</updated>
+    <id>http://http://sandmman.github.io/blog/2016/02/05/RustEnums</id>
+    
+      <content type="html"><![CDATA[<h1>Background</h1>
+
+<p> I&rsquo;m a few days into building my rust NES emulator and I&rsquo;m beginning to implement the 6502 instruction set, when I run into a bit of a flow control conundrum. The 6502 has ~150 different opcodes, so if/else statements were out the window, but what about the built in match system?</p>
+
+<p> Ideally something like this?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'><span class="k">match</span> <span class="n">opcode</span> <span class="p">{</span>
+</span><span class='line'>  <span class="n">ADD</span> <span class="o">=&gt;</span> <span class="p">{...},</span>
+</span><span class='line'>  <span class="n">AND</span> <span class="o">=&gt;</span> <span class="p">{...},</span>
+</span><span class='line'>  <span class="n">JMP</span> <span class="o">=&gt;</span> <span class="p">{...},</span>
+</span><span class='line'>  <span class="p">...</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Where each value is a variable containing its associated opcode. Unfortunately, straight out of the box, you end up with loads of <code>error: unreachable pattern</code> errors and its a bit unclear about how best to get around this. Obviously, you could just replace the variables with their associated hex opcodes, but that&rsquo;s not elegant.</p>
+
+<p>I could not find much documentation anywhere on how to do this, but it turns out you can use an enum with a bit of help from  <code>num  and enum_primitive crates</code></p>
+
+<p>First declare your enum of opcodes:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'>  <span class="n">enum_from_primitive</span><span class="o">!</span> <span class="p">{</span>
+</span><span class='line'>      <span class="cp">#[repr(u8)]</span>
+</span><span class='line'>      <span class="k">pub</span> <span class="k">enum</span> <span class="n">Opcode</span> <span class="p">{</span>
+</span><span class='line'>          <span class="n">adc_immediate</span>   <span class="o">=</span> <span class="mh">0x69</span><span class="p">,</span>
+</span><span class='line'>          <span class="n">adc_zero_page</span>   <span class="o">=</span> <span class="mh">0x65</span><span class="p">,</span>
+</span><span class='line'>          <span class="n">adc_zero_page_x</span> <span class="o">=</span> <span class="mh">0x75</span><span class="p">,</span>
+</span><span class='line'>          <span class="p">...</span>
+</span><span class='line'>      <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here, the macro <code>enum_from_primitive!</code> wraps the Opcode enum declaration and automatically adds to it an implementation of num::FromPrimitive. This will allow you to convert from primitive integers to the Opcode enum!</p>
+
+<p>Next create some function that will return a variant of the Opcode type using the <code>num::FromPrimitive</code> module. In this case, my opcodes are only 1 byte, so from_u8 will return an Option&lt;>, which can simply be unwrapped to get the enum type!</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'>  <span class="k">pub</span> <span class="k">struct</span> <span class="n">Instruction</span><span class="p">{</span>
+</span><span class='line'>      <span class="k">pub</span> <span class="n">opcode</span><span class="o">:</span> <span class="kt">u8</span><span class="p">,</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>  <span class="k">impl</span> <span class="n">Instruction</span> <span class="p">{</span>
+</span><span class='line'>    <span class="k">pub</span> <span class="k">fn</span> <span class="n">opcode</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Opcode</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">Opcode</span><span class="o">::</span><span class="n">from_u8</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">opcode</span><span class="p">).</span><span class="n">unwrap_or_else</span><span class="p">(</span>
+</span><span class='line'>            <span class="o">||</span> <span class="n">panic</span><span class="o">!</span><span class="p">(</span><span class="s">&quot;Unrecognized instruction: {:#x}&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="p">.</span><span class="n">opcode</span><span class="p">))</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>With that you can now simply match your opcode to the possible enum variants!</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='rust'><span class='line'>  <span class="kd">let</span> <span class="n">opcode</span> <span class="o">=</span> <span class="n">instru</span><span class="p">.</span><span class="n">opcode</span><span class="p">();</span>
+</span><span class='line'>  <span class="k">match</span> <span class="n">opcode</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">adc_immediate</span> <span class="o">=&gt;</span> <span class="p">{...},</span>
+</span><span class='line'>    <span class="n">adc_zero_page</span> <span class="o">=&gt;</span> <span class="p">{...},</span>
+</span><span class='line'>    <span class="n">adc_zero_page_x</span> <span class="o">=&gt;</span> <span class="p">{...},</span>
+</span><span class='line'>    <span class="p">...</span>
+</span><span class='line'>  <span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This structure allows you to easily separate your code into modules, while being clear and understandable. Cool stuff!</p>
+]]></content>
+      
+  </entry>
   
   <entry>
     
