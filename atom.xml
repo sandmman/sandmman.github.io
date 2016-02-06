@@ -4,7 +4,7 @@
   <title><![CDATA[TheSandbox]]></title>
   <link href="http://http://sandmman.github.io/atom.xml" rel="self"/>
   <link href="http://http://sandmman.github.io/"/>
-  <updated>2016-02-06T15:22:49-05:00</updated>
+  <updated>2016-02-06T15:28:58-05:00</updated>
   <id>http://http://sandmman.github.io/</id>
   <author>
     <name><![CDATA[Aaron Liberatore]]></name>
@@ -20,7 +20,7 @@
     <updated>2016-02-05T00:00:00-05:00</updated>
     <id>http://http://sandmman.github.io/blog/2016/02/05/RustEnums</id>
     
-      <content type="html"><![CDATA[<h1>Background</h1>
+      <content type="html"><![CDATA[<h1>Modeling Opcodes in Rust</h1>
 
 <p> I&rsquo;m a few days into building my rust NES emulator and I&rsquo;m beginning to implement the 6502 instruction set, when I run into a bit of a flow control conundrum. The 6502 has ~150 different opcodes, so if/else statements were out the window, but what about the built in match system?</p>
 
