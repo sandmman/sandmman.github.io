@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Crazy 8s P2P Multiplayer - sandmman</title>
+  
+  <!-- PeerJS CDN for WebRTC DataChannels -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="suits-logo">♠ ♥</span>
+      <span class="brand-title">Crazy 8s P2P</span>
+      <span class="suits-logo">♦ ♣</span>
+    </div>
+
+    <div class="header-center">
+      <div id="p2p-status-pill" class="p2p-pill connecting">
+        <span class="dot"></span>
+        <span id="p2p-status-text">WebRTC Initializing</span>
+      </div>
+      <button id="room-badge-btn" class="room-code-badge" style="display:none;" onclick="copyInviteLink()">
+        Room: <strong id="room-code-val">----</strong> <span class="copy-hint">(Click to Copy Link)</span>
+      </button>
+    </div>
+
+    <div class="header-right">
+      <button id="sound-toggle-btn" class="icon-btn" onclick="toggleMute()" title="Toggle Sound">
+        🔊
+      </button>
+      <a href="https://github.com/sandmman" target="_blank" class="gh-link" title="GitHub / sandmman">
+        github.com/sandmman
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Game Canvas & Table Container -->
+  <main class="main-viewport">
+    
+    <!-- LOBBY SCREEN -->
+    <div id="lobby-screen" class="lobby-modal">
+      <div class="lobby-content">
+        <h1 class="lobby-title">Crazy 8s Tabletop</h1>
+        <p class="lobby-subtitle">
+          Online P2P multiplayer for up to 8 players. Built with WebRTC & interactive card physics.
+        </p>
+
+        <div class="form-row">
+          <label for="player-name-input">Your Name</label>
+          <input type="text" id="player-name-input" class="text-input" placeholder="Enter nickname" value="Player" maxlength="16">
+        </div>
+
+        <div class="lobby-actions">
+          <button class="btn btn-primary" onclick="handleCreateRoom()">
+            <span class="btn-icon">👑</span> Create Room
+          </button>
+          
+          <div class="join-box">
+            <input type="text" id="join-room-input" class="text-input code-input" placeholder="ROOM" maxlength="8">
+            <button class="btn btn-secondary" onclick="handleJoinRoom()">
+              Join
+            </button>
+          </div>
+        </div>
+
+        <!-- Active Room Panel (When created or joined) -->
+        <div id="lobby-roster-panel" class="lobby-roster-panel" style="display:none;">
+          <div class="roster-header">
+            <h3>Table Seating (<span id="roster-count">1</span>/8)</h3>
+            <div class="roster-btns">
+              <button class="btn btn-sm btn-gold" id="add-bot-btn" onclick="handleAddBot()">
+                + Add AI Bot
+              </button>
+              <button class="btn btn-sm" onclick="openSecondTab()">
+                + Open 2nd Tab
+              </button>
+            </div>
+          </div>
+
+          <div class="seats-grid" id="seats-grid">
+            <!-- 8 Seat Slots injected by JS -->
+          </div>
+
+          <button class="btn btn-success btn-large" id="start-game-btn" onclick="handleStartGame()" disabled>
+            🚀 Deal & Start Game (2–8 Players)
+          </button>
+        </div>
+
+        <div class="rules-summary">
+          <strong>Rules:</strong> &lt;5 players deal 6 cards (1 deck) • &ge;5 players deal 7 cards (2 decks) • 
+          8s are Wild • 7s Reverse • 2s are +2 (stackable, draw one-by-one with mid-draw 2 interception) • 
+          3+ matching cards force next n-1 players to draw 1 card • Drag or click cards to play!
+        </div>
+      </div>
+    </div>
+
+    <!-- CASINO TABLE FELT -->
+    <div id="game-table" class="casino-table" style="display:none;">
+      
+      <!-- Table Surround / Rail Info Bar -->
+      <div class="table-rail-bar">
+        <div class="game-round-pill">
+          Game #<span id="game-number-text">1</span>
+        </div>
+        <div class="direction-pill" id="direction-indicator">
+          ↻ Clockwise
+        </div>
+        <div class="turn-callout" id="turn-callout">
+          Waiting...
+        </div>
+      </div>
+
+      <!-- Opponents Oval Ring -->
+      <div class="opponents-layer" id="opponents-layer">
+        <!-- 7 Opponent Seats rendered around table -->
+      </div>
+
+      <!-- Center Table Field -->
+      <div class="center-felt" id="center-felt">
+        
+        <!-- Draw Pile Zone -->
+        <div class="pile-wrapper" id="draw-pile-zone">
+          <div class="pile-tag">Draw (<span id="draw-count-label">0</span>)</div>
+          <div id="draw-pile-card" class="table-card card-back" title="Click or Drag into hand to draw">
+            <div class="card-back-pattern"></div>
+            <span class="draw-pile-text">DRAW</span>
+          </div>
+          <div id="penalty-badge" class="penalty-counter-badge" style="display:none;">+2</div>
+        </div>
+
+        <!-- Discard Pile / Drop Zone -->
+        <div class="pile-wrapper" id="discard-drop-zone">
+          <div class="pile-tag">Discard Pile</div>
+          <div class="discard-stack" id="discard-stack">
+            <!-- Messy stacked cards injected here -->
+          </div>
+          <div class="drop-target-reticle" id="drop-target-reticle">
+            <span>DROP TO PLAY</span>
+          </div>
+        </div>
+
+        <!-- Active Suit Hologram -->
+        <div class="active-suit-box" id="active-suit-box">
+          <div class="suit-glow-symbol" id="active-suit-symbol">♠</div>
+          <div class="suit-glow-label" id="active-suit-label">Spades</div>
+        </div>
+
+      </div>
+
+      <!-- Active Penalty & Interception Banner -->
+      <div id="penalty-banner" class="penalty-banner-alert" style="display:none;">
+        <span id="penalty-banner-msg">⚠️ +2 PENALTY ACTIVE!</span>
+        <button id="intercept-action-btn" class="btn btn-gold btn-sm pulse" style="display:none;" onclick="handleInterceptPlay()">
+          ⚡ INTERCEPT with 2!
+        </button>
+      </div>
+
+      <!-- Local Player's Interactive Hand & Controls -->
+      <div class="player-station">
+        
+        <!-- Quick Reaction Emotes Bar -->
+        <div class="emotes-bar">
+          <button class="emote-btn" onclick="sendEmote('👏')">👏</button>
+          <button class="emote-btn" onclick="sendEmote('🔥')">🔥</button>
+          <button class="emote-btn" onclick="sendEmote('😱')">😱</button>
+          <button class="emote-btn" onclick="sendEmote('😂')">😂</button>
+          <button class="emote-btn" onclick="sendEmote('😈')">😈</button>
+          <button class="emote-btn" onclick="sendEmote('⏳')">⏳</button>
+        </div>
+
+        <!-- 3D Curved Hand Fan -->
+        <div class="hand-fan-viewport" id="hand-fan-viewport">
+          <div class="hand-fan-track" id="hand-fan-track">
+            <!-- Player cards with rotation arc rendered here -->
+          </div>
+        </div>
+
+        <!-- Player Actions Controls -->
+        <div class="action-dock">
+          <button class="btn btn-gold btn-action" id="play-selected-btn" onclick="handlePlaySelected()" disabled>
+            Play (<span id="selected-card-count">0</span>)
+          </button>
+          <button class="btn btn-secondary btn-action" id="draw-card-btn" onclick="handleDrawOneClick()">
+            Draw 1
+          </button>
+          <button class="btn btn-secondary btn-action" id="draw-until-btn" onclick="handleDrawUntilClick()">
+            Draw Until Playable
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Live Event Ticker -->
+    <div class="action-ticker-panel" id="action-ticker">
+      <div class="ticker-content" id="ticker-lines">
+        <!-- Live event messages -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- WILD 8 SUIT PICKER MODAL -->
+  <div id="wild-modal" class="suit-picker-modal" style="display:none;">
+    <div class="picker-dialog">
+      <h2>Wild 8 Played!</h2>
+      <p>Choose the new active suit for the table:</p>
+      <div class="suits-picker-grid">
+        <button class="suit-select-btn spade" onclick="chooseWildSuit('S')">
+          <span class="symbol">♠</span> Spades
+        </button>
+        <button class="suit-select-btn heart" onclick="chooseWildSuit('H')">
+          <span class="symbol">♥</span> Hearts
+        </button>
+        <button class="suit-select-btn diamond" onclick="chooseWildSuit('D')">
+          <span class="symbol">♦</span> Diamonds
+        </button>
+        <button class="suit-select-btn club" onclick="chooseWildSuit('C')">
+          <span class="symbol">♣</span> Clubs
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME OVER CELEBRATION MODAL -->
+  <div id="game-over-modal" class="suit-picker-modal" style="display:none;">
+    <div class="picker-dialog celebration">
+      <div class="trophy-icon">🏆</div>
+      <h2 id="winner-name-text">Alice Wins!</h2>
+      <p>First to 0 cards!</p>
+      <button class="btn btn-gold btn-large" onclick="handlePlayAgain()">
+        Next Game (Rotate Dealer)
+      </button>
+    </div>
+  </div>
+
+  <!-- Flying Animation Layer & Particle Overlay -->
+  <div id="vfx-layer" class="vfx-overlay"></div>
+
+  <!-- Application Logic Modules -->
+  <script src="engine.js"></script>
+  <script src="network.js"></script>
+  <script src="ux_effects.js"></script>
+
+  <script>
+    // Main App Controller
+    let currentRoom = null;
+    let myPlayerId = localStorage.getItem("c8_p2p_player_id") || "";
+    let selectedCards = []; // Array of card IDs
+    let isMuted = false;
+
+    window.addEventListener("DOMContentLoaded", () => {
+      // Connect network listeners
+      window.Crazy8Network.onConnectionStatus = (status, detail) => {
+        const pill = document.getElementById("p2p-status-pill");
+        const txt = document.getElementById("p2p-status-text");
+        pill.className = "p2p-pill " + status.toLowerCase();
+        txt.innerText = detail || status;
+      };
+
+      window.Crazy8Network.onStateUpdate = (newRoom) => {
+        const prevRoom = currentRoom;
+        currentRoom = newRoom;
+        if (window.Crazy8UX && window.Crazy8UX.playActionEffects) {
+          window.Crazy8UX.playActionEffects(newRoom.last_action, prevRoom, newRoom);
+        }
+        renderState(newRoom);
+      };
+
+      window.Crazy8Network.onRemoteTelemetry = (telemetry) => {
+        if (window.Crazy8UX && window.Crazy8UX.renderRemoteTelemetry) {
+          window.Crazy8UX.renderRemoteTelemetry(telemetry, currentRoom);
+        }
+      };
+
+      // Check query params (?room=XXXX&player=Name)
+      const params = new URLSearchParams(window.location.search);
+      const roomCode = params.get("room");
+      const playerName = params.get("player");
+      if (playerName) document.getElementById("player-name-input").value = playerName;
+      if (roomCode) {
+        document.getElementById("join-room-input").value = roomCode.toUpperCase();
+        handleJoinRoom(roomCode.toUpperCase());
+      }
+    });
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      if (window.Crazy8Audio) window.Crazy8Audio.setMuted(isMuted);
+      document.getElementById("sound-toggle-btn").innerText = isMuted ? "🔇" : "🔊";
+    }
+
+    function handleCreateRoom() {
+      const name = document.getElementById("player-name-input").value.trim() || "Host";
+      const res = window.Crazy8Network.createRoom(name);
+      myPlayerId = res.playerId;
+      localStorage.setItem("c8_p2p_player_id", myPlayerId);
+      renderState(res.room);
+    }
+
+    function handleJoinRoom(explicitCode) {
+      const code = (explicitCode || document.getElementById("join-room-input").value).trim().toUpperCase();
+      if (!code) return alert("Please enter a room code.");
+      const name = document.getElementById("player-name-input").value.trim() || "Player";
+      const res = window.Crazy8Network.joinRoom(code, name, myPlayerId);
+      myPlayerId = res.playerId;
+      localStorage.setItem("c8_p2p_player_id", myPlayerId);
+    }
+
+    function handleAddBot() {
+      window.Crazy8Network.sendAction("addBot", {});
+    }
+
+    function handleStartGame() {
+      window.Crazy8Network.sendAction("startGame", {});
+    }
+
+    function handlePlayAgain() {
+      document.getElementById("game-over-modal").style.display = "none";
+      window.Crazy8Network.sendAction("startGame", {});
+    }
+
+    function openSecondTab() {
+      if (!currentRoom) return;
+      const count = currentRoom.players.length + 1;
+      const url = `${window.location.origin}${window.location.pathname}?room=${currentRoom.room_id}&player=Player${count}`;
+      window.open(url, "_blank");
+    }
+
+    function copyInviteLink() {
+      if (!currentRoom) return;
+      const url = `${window.location.origin}${window.location.pathname}?room=${currentRoom.room_id}`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert("Invite link copied to clipboard!\n" + url);
+      });
+    }
+
+    function sendEmote(emoji) {
+      window.Crazy8Network.sendEmote(emoji);
+      if (window.Crazy8UX && window.Crazy8UX.showSeatEmote) {
+        window.Crazy8UX.showSeatEmote(myPlayerId, emoji, currentRoom);
+      }
+    }
+
+    // State Render Dispatcher
+    function renderState(room) {
+      if (!room) return;
+      document.getElementById("room-badge-btn").style.display = "inline-flex";
+      document.getElementById("room-code-val").innerText = room.room_id;
+
+      if (room.status === "LOBBY") {
+        document.getElementById("lobby-screen").style.display = "flex";
+        document.getElementById("lobby-roster-panel").style.display = "block";
+        document.getElementById("game-table").style.display = "none";
+        renderLobbyRoster(room);
+      } else {
+        document.getElementById("lobby-screen").style.display = "none";
+        document.getElementById("game-table").style.display = "flex";
+        renderActiveGame(room);
+      }
+
+      renderLogs(room.action_log);
+    }
+
+    function renderLobbyRoster(room) {
+      document.getElementById("roster-count").innerText = room.players.length;
+      const grid = document.getElementById("seats-grid");
+      grid.innerHTML = "";
+
+      for (let i = 0; i < 8; i++) {
+        const p = room.players[i];
+        const slot = document.createElement("div");
+        slot.className = "seat-slot" + (p ? " occupied" : "");
+        if (p) {
+          slot.innerHTML = `
+            <div class="slot-avatar">${p.is_bot ? "🤖" : "👤"}</div>
+            <div class="slot-name">${escapeHtml(p.name)}</div>
+            <div class="slot-badge">${p.id === room.players[0].id ? "👑 Host" : (p.is_bot ? "AI Bot" : "Player")}</div>
+          `;
+        } else {
+          slot.innerHTML = `
+            <div class="slot-avatar empty">+</div>
+            <div class="slot-name">Seat ${i + 1}</div>
+            <div class="slot-badge">Empty</div>
+          `;
+        }
+        grid.appendChild(slot);
+      }
+
+      document.getElementById("add-bot-btn").disabled = room.players.length >= 8;
+      document.getElementById("start-game-btn").disabled = room.players.length < 2 || !window.Crazy8Network.isHost;
+    }
+
+    function renderActiveGame(room) {
+      document.getElementById("game-number-text").innerText = room.game_number;
+      document.getElementById("direction-indicator").innerText = room.direction === 1 ? "↻ Clockwise" : "↺ Counter-Clockwise";
+      document.getElementById("draw-count-label").innerText = room.draw_pile_count || 0;
+
+      const myTurn = (room.players[room.current_player_index] || {}).id === myPlayerId;
+      const curPlayer = room.players[room.current_player_index] || { name: "" };
+
+      const callout = document.getElementById("turn-callout");
+      if (room.status === "GAME_OVER") {
+        callout.innerText = "🏆 GAME OVER!";
+        callout.className = "turn-callout win";
+        const winner = room.players.find(p => p.id === room.winner_id);
+        if (winner) {
+          document.getElementById("winner-name-text").innerText = `${winner.name} Wins!`;
+          document.getElementById("game-over-modal").style.display = "flex";
+        }
+      } else if (myTurn) {
+        callout.innerText = room.phase === "DRAWING_PENALTY" ? "⚠️ YOUR TURN: +2 Penalty!" : "👉 YOUR TURN!";
+        callout.className = "turn-callout my-turn";
+      } else {
+        callout.innerText = `${curPlayer.name}'s Turn`;
+        callout.className = "turn-callout other-turn";
+      }
+
+      // Render Opponent Seats (excluding local player)
+      const oppLayer = document.getElementById("opponents-layer");
+      oppLayer.innerHTML = "";
+      const otherPlayers = room.players.filter(p => p.id !== myPlayerId);
+      otherPlayers.forEach((p, idx) => {
+        const isTurn = p.id === curPlayer.id;
+        const isDealer = room.players[room.dealer_index] && room.players[room.dealer_index].id === p.id;
+        const seatEl = document.createElement("div");
+        seatEl.className = "opponent-seat" + (isTurn ? " active-turn" : "");
+        seatEl.id = `seat-${p.id}`;
+
+        // 3D mini-fan card backs for opponent
+        let cardsHtml = '<div class="mini-card-fan">';
+        const renderCount = Math.min(p.card_count || 0, 8);
+        for (let c = 0; c < renderCount; c++) {
+          const rot = (c - (renderCount - 1) / 2) * 5;
+          cardsHtml += `<div class="mini-card-back" style="transform: rotate(${rot}deg)"></div>`;
+        }
+        cardsHtml += '</div>';
+
+        seatEl.innerHTML = `
+          ${isDealer ? '<div class="dealer-chip">D</div>' : ''}
+          <div class="seat-avatar">${p.is_bot ? "🤖" : "👤"}</div>
+          <div class="seat-info">
+            <span class="seat-name">${escapeHtml(p.name)}</span>
+            <span class="seat-count">${p.card_count} cards</span>
+          </div>
+          ${cardsHtml}
+          <div class="emote-bubble" id="emote-seat-${p.id}"></div>
+        `;
+        oppLayer.appendChild(seatEl);
+      });
+
+      // Render Discard Stack (Messy Physical Stack)
+      if (window.Crazy8UX && window.Crazy8UX.renderDiscardStack) {
+        window.Crazy8UX.renderDiscardStack(room.discard_pile);
+      }
+
+      // Active Suit
+      const suitSymbols = { S: "♠", H: "♥", D: "♦", C: "♣" };
+      const suitNames = { S: "Spades", H: "Hearts", D: "Diamonds", C: "Clubs" };
+      const suitEl = document.getElementById("active-suit-symbol");
+      suitEl.innerText = suitSymbols[room.active_suit];
+      suitEl.className = "suit-glow-symbol " + (room.active_suit === "H" || room.active_suit === "D" ? "red" : "black");
+      document.getElementById("active-suit-label").innerText = suitNames[room.active_suit];
+
+      // Penalty Counter
+      const pBadge = document.getElementById("penalty-badge");
+      const pBanner = document.getElementById("penalty-banner");
+      const interceptBtn = document.getElementById("intercept-action-btn");
+      if (room.pending_two_penalty > 0) {
+        pBadge.style.display = "flex";
+        pBadge.innerText = `+${room.pending_two_penalty}`;
+        pBanner.style.display = "flex";
+        document.getElementById("penalty-banner-msg").innerText = `⚠️ +2 PENALTY ACTIVE: ${room.pending_two_penalty} cards remaining to draw!`;
+
+        // Check if player drew a 2 and can intercept
+        const myP = room.players.find(p => p.id === myPlayerId);
+        const hasDrawn2 = myP && room.last_drawn_card_id && myP.hand.some(c => c.id === room.last_drawn_card_id && c.rank === 2);
+        if (myTurn && (room.penalty_cards_drawn_this_turn === 0 || hasDrawn2)) {
+          interceptBtn.style.display = "inline-block";
+        } else {
+          interceptBtn.style.display = "none";
+        }
+      } else {
+        pBadge.style.display = "none";
+        pBanner.style.display = "none";
+        interceptBtn.style.display = "none";
+      }
+
+      // Render Player's Interactive Hand Fan
+      const me = room.players.find(p => p.id === myPlayerId) || { hand: [] };
+      if (window.Crazy8UX && window.Crazy8UX.renderInteractiveHand) {
+        window.Crazy8UX.renderInteractiveHand(
+          me.hand,
+          selectedCards,
+          room,
+          myTurn,
+          (card) => toggleCardSelection(card, me.hand),
+          (cardIds, targetSuit) => executePlayAction(cardIds, targetSuit),
+          () => executeDrawAction()
+        );
+      }
+
+      // Action Buttons
+      document.getElementById("play-selected-btn").disabled = !myTurn || selectedCards.length === 0 || room.status !== "PLAYING";
+      document.getElementById("selected-card-count").innerText = selectedCards.length;
+      document.getElementById("draw-card-btn").disabled = !myTurn || room.status !== "PLAYING";
+      document.getElementById("draw-until-btn").disabled = !myTurn || room.phase === "DRAWING_PENALTY" || room.status !== "PLAYING";
+    }
+
+    function toggleCardSelection(card, hand) {
+      const idx = selectedCards.indexOf(card.id);
+      if (idx !== -1) {
+        selectedCards.splice(idx, 1);
+      } else {
+        if (selectedCards.length > 0) {
+          const first = hand.find(c => c.id === selectedCards[0]);
+          if (first && first.rank !== card.rank) {
+            selectedCards = [card.id];
+          } else {
+            selectedCards.push(card.id);
+          }
+        } else {
+          selectedCards.push(card.id);
+        }
+      }
+      renderActiveGame(currentRoom);
+    }
+
+    function handlePlaySelected() {
+      if (selectedCards.length === 0) return;
+      const me = currentRoom.players.find(p => p.id === myPlayerId);
+      const first = me.hand.find(c => c.id === selectedCards[0]);
+
+      if (first && first.rank === 8) {
+        document.getElementById("wild-modal").style.display = "flex";
+        return;
+      }
+      executePlayAction(selectedCards, null);
+    }
+
+    function chooseWildSuit(suit) {
+      document.getElementById("wild-modal").style.display = "none";
+      executePlayAction(selectedCards, suit);
+    }
+
+    function handleInterceptPlay() {
+      const me = currentRoom.players.find(p => p.id === myPlayerId);
+      const drawn2 = me.hand.find(c => c.id === currentRoom.last_drawn_card_id && c.rank === 2);
+      if (drawn2) {
+        executePlayAction([drawn2.id], null);
+      } else {
+        const any2 = me.hand.filter(c => c.rank === 2);
+        if (any2.length > 0) executePlayAction([any2[0].id], null);
+      }
+    }
+
+    function executePlayAction(cardIds, chosenSuit) {
+      selectedCards = [];
+      window.Crazy8Network.sendAction("playCards", { cardIds, chosenSuit });
+    }
+
+    function handleDrawOneClick() {
+      window.Crazy8Network.sendAction("drawCard", {});
+    }
+
+    function executeDrawAction() {
+      window.Crazy8Network.sendAction("drawCard", {});
+    }
+
+    function handleDrawUntilClick() {
+      window.Crazy8Network.sendAction("drawUntilPlayable", {});
+    }
+
+    function renderLogs(logs) {
+      const container = document.getElementById("ticker-lines");
+      container.innerHTML = "";
+      (logs || []).slice(-6).reverse().forEach(line => {
+        const div = document.createElement("div");
+        div.className = "ticker-entry";
+        div.innerText = line;
+        container.appendChild(div);
+      });
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.innerText = str || "";
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
