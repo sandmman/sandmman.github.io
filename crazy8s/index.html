@@ -14,7 +14,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="styles.css?v=20261023v3">
+  <link rel="stylesheet" href="styles.css?v=20261023v4">
 </head>
 <body>
 
@@ -254,9 +254,9 @@
   <div id="vfx-layer" class="vfx-overlay"></div>
 
   <!-- Application Logic Modules (cache-busted for GitHub Pages) -->
-  <script src="engine.js?v=20261023v3"></script>
-  <script src="network.js?v=20261023v3"></script>
-  <script src="ux_effects.js?v=20261023v3"></script>
+  <script src="engine.js?v=20261023v4"></script>
+  <script src="network.js?v=20261023v4"></script>
+  <script src="ux_effects.js?v=20261023v4"></script>
 
   <script>
     // Main App Controller
@@ -277,6 +277,9 @@
       window.Crazy8Network.onStateUpdate = (newRoom) => {
         const prevRoom = currentRoom;
         currentRoom = newRoom;
+        if (window.Crazy8UX && window.Crazy8UX.clearAllRemoteGhosts) {
+          window.Crazy8UX.clearAllRemoteGhosts();
+        }
         if (window.Crazy8UX && window.Crazy8UX.playActionEffects) {
           window.Crazy8UX.playActionEffects(newRoom.last_action, prevRoom, newRoom);
         }

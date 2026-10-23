@@ -463,11 +463,13 @@
         });
       }
 
-      // 4. Port-443 HTTPS Native Relay (ntfy.sh) for all control & state packets
+      // 4. Port-443 HTTPS Native Relay (ntfy.sh) for all control, state, and drag-end packets
       if (
         this.ntfyTopic &&
         typeof fetch !== 'undefined' &&
-        (msg.type === 'RPC_REQUEST' || msg.type === 'SYNC_STATE')
+        (msg.type === 'RPC_REQUEST' ||
+          msg.type === 'SYNC_STATE' ||
+          (msg.type === 'TELEMETRY' && msg.data && msg.data.type === 'DRAG_END'))
       ) {
         try {
           fetch(`https://ntfy.sh/${this.ntfyTopic}`, {
@@ -672,29 +674,37 @@
 
     _checkBotTurn() {
       if (!this.isHost || !this.hostRoom) return;
+      if (this.botTimer) {
+        clearInterval(this.botTimer);
+        this.botTimer = null;
+      }
       if (this.hostRoom.status !== 'PLAYING') return;
 
       const curPlayer = this.hostRoom.players[this.hostRoom.current_player_index];
       if (!curPlayer || !curPlayer.is_bot) return;
 
-      if (this.botTimer) clearTimeout(this.botTimer);
-
       const plan = window.Crazy8Engine.planBotAction(this.hostRoom);
       if (!plan) return;
 
       const botSeatIdx = this.hostRoom.current_player_index;
+      const botId = curPlayer.id;
+      const botName = curPlayer.name;
       let progress = 0;
-      const steps = 10;
-      const intervalMs = 60;
+      const steps = 8;
+      const intervalMs = 55;
+      this.botSeq = (this.botSeq || 0);
 
-      const dragInterval = setInterval(() => {
+      this.botTimer = setInterval(() => {
         progress += 1 / steps;
+        this.botSeq += 1;
         if (progress >= 1) {
-          clearInterval(dragInterval);
+          clearInterval(this.botTimer);
+          this.botTimer = null;
           this.sendTelemetry({
             type: 'DRAG_END',
-            botId: curPlayer.id,
-            botName: curPlayer.name,
+            seq: this.botSeq,
+            botId: botId,
+            botName: botName,
           });
           window.Crazy8Engine.executeBotTurn(this.hostRoom);
           this._broadcastRoomState();
@@ -709,8 +719,9 @@
 
           this.sendTelemetry({
             type: 'BOT_DRAG',
-            botId: curPlayer.id,
-            botName: curPlayer.name,
+            seq: this.botSeq,
+            botId: botId,
+            botName: botName,
             seatIndex: botSeatIdx,
             target: plan.target || 'discard',
             progress: progress,

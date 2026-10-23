@@ -206,13 +206,40 @@
     return discardAngleCache.get(cardId);
   }
 
-  // Active remote drag ghosts
-  const remoteGhosts = new Map(); // senderId -> element
+  // Active remote drag ghosts & sequence/watchdog tracking
+  const remoteGhosts = new Map(); // senderId -> { el, watchdogTimer }
+  const remoteTelemetrySeq = new Map(); // senderId -> highest seq processed
 
   class TabletopUX {
     constructor() {
       this.dragState = null;
       this.throttleTimer = null;
+      this.localTelemetrySeq = 0;
+    }
+
+    clearRemoteGhost(ghostId) {
+      if (!ghostId) return;
+      if (remoteGhosts.has(ghostId)) {
+        const entry = remoteGhosts.get(ghostId);
+        if (entry.watchdogTimer) clearTimeout(entry.watchdogTimer);
+        if (entry.el && entry.el.parentNode) entry.el.remove();
+        remoteGhosts.delete(ghostId);
+      }
+      const seat = document.getElementById(`seat-${ghostId}`);
+      if (seat) {
+        const lifted = seat.querySelectorAll('.mini-card-back.ghost-lifted');
+        lifted.forEach((c) => c.classList.remove('ghost-lifted'));
+      }
+    }
+
+    clearAllRemoteGhosts() {
+      for (const ghostId of Array.from(remoteGhosts.keys())) {
+        this.clearRemoteGhost(ghostId);
+      }
+      const centerFelt = document.getElementById('center-felt');
+      if (centerFelt) {
+        centerFelt.querySelectorAll('.remote-ghost-card').forEach((el) => el.remove());
+      }
     }
 
     // -------------------------------------------------------------
@@ -278,7 +305,7 @@
         });
 
         // Pointer Drag-and-Drop
-        this._bindCardDrag(wrap, card, selectedCards, onPlaySelected);
+        this._bindCardDrag(wrap, card, isPlayable, selectedCards, onPlaySelected);
         track.appendChild(wrap);
       });
 
@@ -286,7 +313,7 @@
       this._bindDrawPileDrag(onDrawOne);
     }
 
-    _bindCardDrag(cardEl, card, selectedCards, onPlaySelected) {
+    _bindCardDrag(cardEl, card, isPlayable, selectedCards, onPlaySelected) {
       let startX = 0;
       let startY = 0;
       let currentX = 0;
@@ -295,11 +322,28 @@
       let lastTime = 0;
       let smoothTiltX = 0;
       let smoothTiltY = 0;
+      let rafId = null;
 
       const dropZone = document.getElementById('discard-drop-zone');
       const reticle = document.getElementById('drop-target-reticle');
 
+      const cleanupListeners = () => {
+        cardEl.removeEventListener('pointermove', onPointerMove);
+        cardEl.removeEventListener('pointerup', onPointerUp);
+        cardEl.removeEventListener('pointercancel', onPointerUp);
+        cardEl.removeEventListener('lostpointercapture', onPointerUp);
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        if (this.throttleTimer) {
+          clearTimeout(this.throttleTimer);
+          this.throttleTimer = null;
+        }
+      };
+
       const onPointerDown = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
         startX = e.clientX;
         startY = e.clientY;
         currentX = e.clientX;
@@ -309,17 +353,20 @@
         smoothTiltY = 0;
         cardEl.dataset.wasDragged = 'false';
 
-        cardEl.setPointerCapture(e.pointerId);
+        try {
+          cardEl.setPointerCapture(e.pointerId);
+        } catch (err) {}
         cardEl.addEventListener('pointermove', onPointerMove);
         cardEl.addEventListener('pointerup', onPointerUp);
         cardEl.addEventListener('pointercancel', onPointerUp);
+        cardEl.addEventListener('lostpointercapture', onPointerUp);
       };
 
       const onPointerMove = (e) => {
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
 
-        if (!isDragging && Math.hypot(dx, dy) > 10) {
+        if (!isDragging && Math.hypot(dx, dy) > 8) {
           isDragging = true;
           cardEl.dataset.wasDragged = 'true';
           cardEl.classList.add('dragging');
@@ -343,19 +390,26 @@
           smoothTiltX = smoothTiltX * 0.78 + targetTiltX * 0.22;
           smoothTiltY = smoothTiltY * 0.78 + targetTiltY * 0.22;
 
-          // Drag offset relative to base card slot (no horizontal jumping)
-          cardEl.style.transform = `translate3d(calc(var(--base-x, 0px) + ${dx}px), calc(var(--base-y, 0px) + ${dy}px), 0) rotateX(${smoothTiltX.toFixed(1)}deg) rotateY(${smoothTiltY.toFixed(1)}deg) scale(1.08)`;
+          if (!rafId) {
+            rafId = requestAnimationFrame(() => {
+              rafId = null;
+              if (!isDragging) return;
+              const curDx = currentX - startX;
+              const curDy = currentY - startY;
+              cardEl.style.transform = `translate3d(calc(var(--base-x, 0px) + ${curDx}px), calc(var(--base-y, 0px) + ${curDy}px), 0) rotateX(${smoothTiltX.toFixed(1)}deg) rotateY(${smoothTiltY.toFixed(1)}deg) scale(1.08)`;
+            });
+          }
 
           // Check if hovering over Discard Pile drop zone
           if (dropZone && reticle) {
             const rect = dropZone.getBoundingClientRect();
             const inZone =
-              e.clientX >= rect.left - 25 &&
-              e.clientX <= rect.right + 25 &&
-              e.clientY >= rect.top - 25 &&
-              e.clientY <= rect.bottom + 25;
+              e.clientX >= rect.left - 35 &&
+              e.clientX <= rect.right + 35 &&
+              e.clientY >= rect.top - 35 &&
+              e.clientY <= rect.bottom + 35;
 
-            if (inZone) {
+            if (inZone && isPlayable) {
               reticle.classList.add('active');
             } else {
               reticle.classList.remove('active');
@@ -366,16 +420,17 @@
           if (dropZone && window.Crazy8Network && !this.throttleTimer) {
             this.throttleTimer = setTimeout(() => {
               this.throttleTimer = null;
+              if (!isDragging) return;
               const dRect = dropZone.getBoundingClientRect();
               const dropCenterY = dRect.top + dRect.height / 2;
               const distY = Math.max(100, startY - dropCenterY);
-              // v: 0 when pointer at hand, 1 when at drop zone
-              const v = Math.max(-0.15, Math.min(1.25, (startY - e.clientY) / distY));
-              // u: lateral offset (-1 left to +1 right)
-              const u = Math.max(-1.2, Math.min(1.2, (e.clientX - startX) / distY));
+              const v = Math.max(-0.15, Math.min(1.15, (startY - currentY) / distY));
+              const u = Math.max(-1.2, Math.min(1.2, (currentX - startX) / distY));
 
+              this.localTelemetrySeq += 1;
               window.Crazy8Network.sendTelemetry({
                 type: 'DRAG_MOVE',
+                seq: this.localTelemetrySeq,
                 cardId: card.id,
                 v: v,
                 u: u,
@@ -388,43 +443,50 @@
       };
 
       const onPointerUp = (e) => {
-        cardEl.removeEventListener('pointermove', onPointerMove);
-        cardEl.removeEventListener('pointerup', onPointerUp);
-        cardEl.removeEventListener('pointercancel', onPointerUp);
+        const wasDragging = isDragging;
+        isDragging = false;
+        cleanupListeners();
 
         const trackEl = document.getElementById('hand-fan-track');
         if (trackEl) trackEl.classList.remove('dragging-active');
-
         if (reticle) reticle.classList.remove('active');
 
-        if (isDragging) {
-          isDragging = false;
+        if (wasDragging) {
           cardEl.classList.remove('dragging');
 
-          // Send drag end telemetry
+          // Always send final DRAG_END with a strictly higher sequence number
           if (window.Crazy8Network) {
-            window.Crazy8Network.sendTelemetry({ type: 'DRAG_END', cardId: card.id });
+            this.localTelemetrySeq += 1;
+            window.Crazy8Network.sendTelemetry({
+              type: 'DRAG_END',
+              seq: this.localTelemetrySeq,
+              cardId: card.id,
+            });
           }
 
-          // Check drop zone collision with generous snap margin
+          // Check drop zone collision
           if (dropZone) {
             const rect = dropZone.getBoundingClientRect();
+            const endX = e.clientX !== undefined ? e.clientX : currentX;
+            const endY = e.clientY !== undefined ? e.clientY : currentY;
             const droppedInZone =
-              e.clientX >= rect.left - 42 &&
-              e.clientX <= rect.right + 42 &&
-              e.clientY >= rect.top - 42 &&
-              e.clientY <= rect.bottom + 42;
+              endX >= rect.left - 45 &&
+              endX <= rect.right + 45 &&
+              endY >= rect.top - 45 &&
+              endY <= rect.bottom + 45;
 
-            if (droppedInZone) {
+            if (droppedInZone && isPlayable) {
               audio.play('card_snap');
-              // Play combo if this card was part of selectedCards, else play this single card
               const toPlay = selectedCards.includes(card.id) ? selectedCards : [card.id];
+              // Reset inline transform before invoking play so card never hangs in mid-air
+              // (e.g. while Wild 8 suit picker is open or waiting for network sync)
+              cardEl.style.transform = '';
               onPlaySelected(toPlay, null);
               return;
             }
           }
 
-          // Reset transform so card smoothly springs back to its fan slot
+          // Smoothly spring back to fan slot
           cardEl.style.transform = '';
         }
       };
@@ -507,31 +569,30 @@
 
       const senderId = telemetry.senderId;
       const data = telemetry.data || {};
+      const ghostId = data.botId || senderId;
 
       if (data.type === 'EMOTE') {
         this.showSeatEmote(data.playerId, data.emoji, room);
         return;
       }
 
+      // Enforce monotonic sequence ordering per sender so delayed multi-transport
+      // DRAG_MOVE packets can never resurrect a ghost card after DRAG_END
+      if (typeof data.seq === 'number' && ghostId) {
+        const lastSeq = remoteTelemetrySeq.get(ghostId) || 0;
+        if (data.seq < lastSeq && lastSeq - data.seq < 5000) {
+          return;
+        }
+        remoteTelemetrySeq.set(ghostId, data.seq);
+      }
+
       if (data.type === 'DRAG_END') {
-        const ghostId = senderId || data.botId;
-        if (remoteGhosts.has(ghostId)) {
-          const el = remoteGhosts.get(ghostId);
-          el.remove();
-          remoteGhosts.delete(ghostId);
-        }
-        // Remove ghost-lifted class from opponent mini-card fan
-        const seat = document.getElementById(`seat-${ghostId}`);
-        if (seat) {
-          const lifted = seat.querySelectorAll('.mini-card-back.ghost-lifted');
-          lifted.forEach((c) => c.classList.remove('ghost-lifted'));
-        }
+        this.clearRemoteGhost(ghostId);
         return;
       }
 
       if (data.type === 'DRAG_MOVE' || data.type === 'BOT_DRAG') {
-        const ghostId = senderId || data.botId;
-        let ghost = remoteGhosts.get(ghostId);
+        let entry = remoteGhosts.get(ghostId);
 
         // Find the opponent's seat in the DOM (top of the table)
         const seatEl = document.getElementById(`seat-${ghostId}`);
@@ -566,22 +627,33 @@
           seatY = sRect.top + sRect.height / 2 - fRect.top;
         }
 
-        if (!ghost) {
-          ghost = document.createElement('div');
-          ghost.className = 'table-card card-back remote-ghost-card';
-          const name = telemetry.senderName || data.botName || 'Opponent';
-          ghost.innerHTML = `
-            <div class="remote-ghost-badge">${name} dragging...</div>
+        if (!entry || !entry.el || !entry.el.parentNode) {
+          const ghostEl = document.createElement('div');
+          ghostEl.className = 'table-card card-back remote-ghost-card';
+          const name = data.botName || telemetry.senderName || 'Opponent';
+          ghostEl.innerHTML = `
+            <div class="remote-ghost-badge">${name}</div>
             <span class="draw-pile-text">🂠</span>
           `;
-          // Position initially right at opponent's seat
-          ghost.style.transform = `translate3d(${seatX - 38}px, ${seatY - 55}px, 0) scale(0.85)`;
-          centerFelt.appendChild(ghost);
-          remoteGhosts.set(ghostId, ghost);
+          ghostEl.style.transform = `translate3d(${seatX - 38}px, ${seatY - 55}px, 0) scale(0.85)`;
+          centerFelt.appendChild(ghostEl);
+          entry = { el: ghostEl, watchdogTimer: null };
+          remoteGhosts.set(ghostId, entry);
         }
 
+        // Reset 900ms inactivity watchdog so a ghost card can NEVER stay stuck on the pile
+        if (entry.watchdogTimer) clearTimeout(entry.watchdogTimer);
+        entry.watchdogTimer = setTimeout(() => {
+          this.clearRemoteGhost(ghostId);
+        }, 900);
+
         // v: 0 at opponent seat -> 1 at discard pile
-        const v = typeof data.v === 'number' ? data.v : (typeof data.progress === 'number' ? data.progress : 0.5);
+        const v =
+          typeof data.v === 'number'
+            ? data.v
+            : typeof data.progress === 'number'
+            ? data.progress
+            : 0.5;
         const u = typeof data.u === 'number' ? data.u : 0;
 
         // Interpolate along seat-to-discard vector, factoring lateral offset u
@@ -589,9 +661,9 @@
         const py = seatY + (targetY - seatY) * v;
         const tiltX = data.tiltX || 0;
         const tiltY = data.tiltY || 0;
-        const scale = 0.88 + Math.min(1, Math.max(0, v)) * 0.2;
+        const scale = 0.88 + Math.min(1, Math.max(0, v)) * 0.16;
 
-        ghost.style.transform = `translate3d(${px - 38}px, ${py - 55}px, 0) rotateX(${tiltX.toFixed(1)}deg) rotateY(${tiltY.toFixed(1)}deg) rotateZ(${((1 - v) * 8).toFixed(1)}deg) scale(${scale.toFixed(2)})`;
+        entry.el.style.transform = `translate3d(${px - 38}px, ${py - 55}px, 0) rotateX(${tiltX.toFixed(1)}deg) rotateY(${tiltY.toFixed(1)}deg) rotateZ(${((1 - v) * 8).toFixed(1)}deg) scale(${scale.toFixed(2)})`;
       }
     }
 
