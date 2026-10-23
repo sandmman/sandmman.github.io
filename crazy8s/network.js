@@ -28,6 +28,9 @@
       // Host State
       this.hostRoom = null;
       this.botTimer = null;
+      this.hasSynced = false;
+      this.joinRetryTimer = null;
+      this._storageListener = null;
 
       // Callbacks
       this.onStateUpdate = null;
@@ -42,10 +45,11 @@
     }
 
     _setupBroadcastChannel(roomId) {
+      const roomKey = roomId.toLowerCase();
       if (typeof BroadcastChannel !== 'undefined') {
         try {
           if (this.broadcastChannel) this.broadcastChannel.close();
-          this.broadcastChannel = new BroadcastChannel(`crazy8s_room_${roomId.toLowerCase()}`);
+          this.broadcastChannel = new BroadcastChannel(`crazy8s_room_${roomKey}`);
           this.broadcastChannel.onmessage = (evt) => {
             const msg = evt.data;
             if (!msg || msg.senderId === this.myPlayerId) return;
@@ -55,16 +59,38 @@
           console.warn('[BC] BroadcastChannel failed to init:', e);
         }
       }
+
+      // Cross-tab fallback via storage events for same-origin tabs
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        if (this._storageListener) {
+          window.removeEventListener('storage', this._storageListener);
+        }
+        this._storageListener = (e) => {
+          if (e.key === `crazy8s_bus_${roomKey}` && e.newValue) {
+            try {
+              const msg = JSON.parse(e.newValue);
+              if (!msg || msg.senderId === this.myPlayerId) return;
+              this._handleIncomingMessage(msg);
+            } catch (err) {}
+          }
+        };
+        window.addEventListener('storage', this._storageListener);
+      }
     }
 
     // -------------------------------------------------------------
     // HOST MODE
     // -------------------------------------------------------------
 
-    createRoom(hostName) {
+    createRoom(hostName, existingPlayerId = null) {
       this.isHost = true;
       this.roomId = 'R' + Math.floor(1000 + Math.random() * 9000);
-      this.myPlayerId = 'p_' + Math.random().toString(36).substr(2, 9);
+      this.myPlayerId =
+        existingPlayerId ||
+        'p-' +
+          Math.random().toString(36).slice(2, 9) +
+          '-' +
+          Date.now().toString(36).slice(-4);
       this.myPlayerName = hostName || 'Host';
 
       this.hostRoom = window.Crazy8Engine.createRoom(
@@ -148,23 +174,47 @@
     joinRoom(roomId, playerName, existingPlayerId = null) {
       this.isHost = false;
       this.roomId = roomId.toUpperCase();
-      this.myPlayerId = existingPlayerId || 'p_' + Math.random().toString(36).substr(2, 9);
+      this.myPlayerId =
+        existingPlayerId ||
+        'p-' +
+          Math.random().toString(36).slice(2, 9) +
+          '-' +
+          Date.now().toString(36).slice(-4);
       this.myPlayerName = playerName || 'Player';
+      this.hasSynced = false;
 
       this._setupBroadcastChannel(this.roomId);
       this.notifyStatus('CONNECTING', `Connecting to Room ${this.roomId}...`);
 
-      // First broadcast a local discovery in case Host is in another tab
-      this._broadcastMessage({
-        type: 'RPC_REQUEST',
-        action: 'joinRoom',
-        payload: { roomId: this.roomId, playerName: this.myPlayerName },
-        senderId: this.myPlayerId,
-      });
+      const sendJoinRequest = () => {
+        if (this.hasSynced) return;
+        this._broadcastMessage({
+          type: 'RPC_REQUEST',
+          action: 'joinRoom',
+          payload: { roomId: this.roomId, playerName: this.myPlayerName },
+          senderId: this.myPlayerId,
+        });
+      };
+
+      // Send initial discovery over local bus
+      sendJoinRequest();
+
+      // Retry join handshake every 600ms up to 15 times until Host syncs state
+      if (this.joinRetryTimer) clearInterval(this.joinRetryTimer);
+      let attempts = 0;
+      this.joinRetryTimer = setInterval(() => {
+        if (this.hasSynced || attempts >= 15) {
+          clearInterval(this.joinRetryTimer);
+          this.joinRetryTimer = null;
+          return;
+        }
+        attempts++;
+        sendJoinRequest();
+      }, 600);
 
       // Also connect via PeerJS
       if (typeof Peer !== 'undefined') {
-        const myPeerId = `client-${this.myPlayerId}`;
+        const myPeerId = `c8-client-${this.myPlayerId}`;
         const targetHostPeerId = `${PEER_PREFIX}${this.roomId.toLowerCase()}`;
 
         try {
@@ -184,12 +234,7 @@
 
             conn.on('open', () => {
               this.notifyStatus('PEER_CONNECTED', `Connected to Host via WebRTC`);
-              conn.send({
-                type: 'RPC_REQUEST',
-                action: 'joinRoom',
-                payload: { roomId: this.roomId, playerName: this.myPlayerName },
-                senderId: this.myPlayerId,
-              });
+              sendJoinRequest();
             });
 
             conn.on('data', (data) => {
@@ -220,6 +265,15 @@
       if (this.broadcastChannel) {
         try {
           this.broadcastChannel.postMessage(msg);
+        } catch (e) {}
+      }
+      // Cross-tab fallback bus via localStorage
+      if (this.roomId && typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(
+            `crazy8s_bus_${this.roomId.toLowerCase()}`,
+            JSON.stringify({ ...msg, _ts: Date.now() + Math.random() })
+          );
         } catch (e) {}
       }
       for (const conn of this.connections.values()) {
@@ -301,6 +355,14 @@
 
       if (msg.type === 'SYNC_STATE') {
         if (msg.recipientId && msg.recipientId !== this.myPlayerId) return;
+        if (!this.isHost && !this.hasSynced) {
+          this.hasSynced = true;
+          if (this.joinRetryTimer) {
+            clearInterval(this.joinRetryTimer);
+            this.joinRetryTimer = null;
+          }
+          this.notifyStatus('PEER_CONNECTED', `Connected to Room ${this.roomId}`);
+        }
         if (this.onStateUpdate && msg.room) {
           this.onStateUpdate(msg.room);
         }
@@ -365,7 +427,12 @@
       this.hostRoom.players.forEach((p) => {
         if (p.is_bot || p.id === this.myPlayerId) return;
         const pState = E.getPublicRoomState(this.hostRoom, p.id);
-        const packet = { type: 'SYNC_STATE', room: pState, recipientId: p.id };
+        const packet = {
+          type: 'SYNC_STATE',
+          room: pState,
+          recipientId: p.id,
+          senderId: this.myPlayerId,
+        };
         this._broadcastMessage(packet);
       });
     }

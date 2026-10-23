@@ -93,27 +93,36 @@
   }
 
   function addPlayer(room, playerId, playerName, isBot = false) {
+    const existing = room.players.find((p) => p.id === playerId);
+    if (existing) {
+      existing.connected = true;
+      if (playerName) existing.name = playerName;
+      return { ok: true, msg: 'Player reconnected.' };
+    }
     if (room.status !== 'LOBBY') {
       return { ok: false, error: 'Game already in progress.' };
     }
     if (room.players.length >= 8) {
       return { ok: false, error: 'Room is full (maximum 8 players).' };
     }
-    const existing = room.players.find((p) => p.id === playerId);
-    if (existing) {
-      existing.connected = true;
-      existing.name = playerName || existing.name;
-      return { ok: true, msg: 'Player reconnected.' };
+
+    // Disambiguate duplicate or generic default names
+    let finalName = playerName ? playerName.trim() : '';
+    if (!finalName || finalName === 'Player 1') {
+      finalName = `Player ${room.players.length + 1}`;
+    } else if (room.players.some((p) => p.name === finalName)) {
+      finalName = `${finalName} (${room.players.length + 1})`;
     }
+
     room.players.push({
       id: playerId,
-      name: playerName || `Player ${room.players.length + 1}`,
+      name: finalName,
       is_bot: isBot,
       hand: [],
       connected: true,
     });
     room.action_log.push(
-      `${playerName} joined the room (${room.players.length}/8).`
+      `${finalName} joined the room (${room.players.length}/8).`
     );
     room.updated_at = Date.now();
     return { ok: true, msg: 'Player added.' };

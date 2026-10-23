@@ -252,7 +252,7 @@
   <script>
     // Main App Controller
     let currentRoom = null;
-    let myPlayerId = localStorage.getItem("c8_p2p_player_id") || "";
+    let myPlayerId = "p-" + Math.random().toString(36).slice(2, 9) + "-" + Date.now().toString(36).slice(-4);
     let selectedCards = []; // Array of card IDs
     let isMuted = false;
 
@@ -299,9 +299,8 @@
 
     function handleCreateRoom() {
       const name = document.getElementById("player-name-input").value.trim() || "Host";
-      const res = window.Crazy8Network.createRoom(name);
+      const res = window.Crazy8Network.createRoom(name, myPlayerId);
       myPlayerId = res.playerId;
-      localStorage.setItem("c8_p2p_player_id", myPlayerId);
       renderState(res.room);
     }
 
@@ -311,7 +310,6 @@
       const name = document.getElementById("player-name-input").value.trim() || "Player";
       const res = window.Crazy8Network.joinRoom(code, name, myPlayerId);
       myPlayerId = res.playerId;
-      localStorage.setItem("c8_p2p_player_id", myPlayerId);
     }
 
     function handleAddBot() {
