@@ -14,6 +14,28 @@
 
   const PEER_PREFIX = 'crazy8s-sandmman-';
 
+  const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+        'turns:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ];
+
+  const WSS_BROKERS = [
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt',
+  ];
+
   class NetworkController {
     constructor() {
       this.isHost = false;
@@ -25,12 +47,18 @@
       this.broadcastChannel = null;
       this.hostConnection = null;
 
+      // WSS Cloud Relay Fallback
+      this.wssClients = [];
+      this.wssTopic = null;
+      this.seenMsgIds = new Set();
+
       // Host State
       this.hostRoom = null;
       this.botTimer = null;
       this.hasSynced = false;
       this.joinRetryTimer = null;
       this._storageListener = null;
+      this._sendJoinRequest = null;
 
       // Callbacks
       this.onStateUpdate = null;
@@ -78,6 +106,66 @@
       }
     }
 
+    _setupWssRelay(roomId) {
+      if (this.wssClients && this.wssClients.length > 0) {
+        this.wssClients.forEach((client) => {
+          try {
+            client.end(true);
+          } catch (e) {}
+        });
+        this.wssClients = [];
+      }
+
+      this.wssTopic = `crazy8s/sandmman/v2/${roomId.toLowerCase()}`;
+
+      if (typeof mqtt === 'undefined') {
+        console.warn('[WSS] MQTT.js client library not available on page');
+        return;
+      }
+
+      WSS_BROKERS.forEach((brokerUrl) => {
+        try {
+          const clientId = `c8_${this.myPlayerId}_${Math.random().toString(36).slice(2, 7)}`;
+          const client = mqtt.connect(brokerUrl, {
+            clientId: clientId,
+            clean: true,
+            connectTimeout: 6000,
+            reconnectPeriod: 2500,
+          });
+
+          client.on('connect', () => {
+            console.log(`[WSS] Connected to Cloud Relay: ${brokerUrl}`);
+            client.subscribe(this.wssTopic, { qos: 0 }, (err) => {
+              if (!err) {
+                if (this.isHost) {
+                  this.notifyStatus('HOST_READY', `Hosting Room: ${this.roomId}`);
+                } else if (!this.hasSynced && typeof this._sendJoinRequest === 'function') {
+                  this._sendJoinRequest();
+                }
+              }
+            });
+          });
+
+          client.on('message', (topic, payload) => {
+            if (topic !== this.wssTopic) return;
+            try {
+              const msg = JSON.parse(payload.toString());
+              if (!msg || msg.senderId === this.myPlayerId) return;
+              this._handleIncomingMessage(msg);
+            } catch (err) {}
+          });
+
+          client.on('error', (err) => {
+            console.warn(`[WSS] Broker error on ${brokerUrl}:`, err);
+          });
+
+          this.wssClients.push(client);
+        } catch (e) {
+          console.warn(`[WSS] Init error on ${brokerUrl}:`, e);
+        }
+      });
+    }
+
     // -------------------------------------------------------------
     // HOST MODE
     // -------------------------------------------------------------
@@ -100,6 +188,7 @@
       );
 
       this._setupBroadcastChannel(this.roomId);
+      this._setupWssRelay(this.roomId);
       this._initPeerHost(this.roomId);
 
       if (this.onStateUpdate) {
@@ -120,47 +209,56 @@
       this.notifyStatus('CONNECTING', 'Registering WebRTC Peer...');
 
       if (typeof Peer === 'undefined') {
-        this.notifyStatus('LOCAL_ONLY', 'PeerJS not available, running via BroadcastChannel');
+        this.notifyStatus('HOST_READY', `Hosting Room: ${roomId} (WSS Cloud Relay active)`);
         return;
+      }
+
+      if (this.peer) {
+        try {
+          this.peer.destroy();
+        } catch (e) {}
+        this.peer = null;
       }
 
       try {
         this.peer = new Peer(fullPeerId, {
           debug: 1,
           config: {
-            iceServers: [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:global.stun.twilio.com:3478' },
-            ],
+            iceServers: ICE_SERVERS,
           },
         });
 
         this.peer.on('open', (id) => {
-          this.notifyStatus('HOST_READY', `Hosting P2P Room: ${roomId}`);
+          this.notifyStatus('HOST_READY', `Hosting Room: ${roomId}`);
         });
 
         this.peer.on('connection', (conn) => {
+          // Immediately register connection so early data frames find the peer
+          this.connections.set(conn.peer, conn);
+
           conn.on('open', () => {
             this.connections.set(conn.peer, conn);
             this.notifyStatus('PEER_CONNECTED', `Peer joined: ${conn.peer}`);
+            this._broadcastRoomState();
           });
 
           conn.on('data', (data) => {
+            this.connections.set(conn.peer, conn);
             this._handleIncomingMessage(data, conn);
           });
 
           conn.on('close', () => {
             this.connections.delete(conn.peer);
           });
+
+          conn.on('error', (err) => {
+            console.warn('[Host Conn Error]:', err);
+          });
         });
 
         this.peer.on('error', (err) => {
           console.warn('[PeerJS Host Error]:', err);
-          if (err.type === 'unavailable-id') {
-            this.notifyStatus('HOST_READY', `Room ${roomId} active (ID conflict fallback to BC)`);
-          } else {
-            this.notifyStatus('WARN', err.type || err.message);
-          }
+          this.notifyStatus('HOST_READY', `Hosting Room: ${roomId} (Cloud Relay active)`);
         });
       } catch (e) {
         console.warn('[PeerJS Init Error]:', e);
@@ -184,9 +282,10 @@
       this.hasSynced = false;
 
       this._setupBroadcastChannel(this.roomId);
+      this._setupWssRelay(this.roomId);
       this.notifyStatus('CONNECTING', `Connecting to Room ${this.roomId}...`);
 
-      const sendJoinRequest = () => {
+      this._sendJoinRequest = () => {
         if (this.hasSynced) return;
         this._broadcastMessage({
           type: 'RPC_REQUEST',
@@ -196,24 +295,31 @@
         });
       };
 
-      // Send initial discovery over local bus
-      sendJoinRequest();
+      // Send initial discovery request
+      this._sendJoinRequest();
 
-      // Retry join handshake every 600ms up to 15 times until Host syncs state
+      // Retry join handshake every 800ms up to 45 times (36s) until Host syncs state
       if (this.joinRetryTimer) clearInterval(this.joinRetryTimer);
       let attempts = 0;
       this.joinRetryTimer = setInterval(() => {
-        if (this.hasSynced || attempts >= 15) {
+        if (this.hasSynced || attempts >= 45) {
           clearInterval(this.joinRetryTimer);
           this.joinRetryTimer = null;
           return;
         }
         attempts++;
-        sendJoinRequest();
-      }, 600);
+        this._sendJoinRequest();
+      }, 800);
 
-      // Also connect via PeerJS
+      // Also connect via PeerJS with TURN relay servers
       if (typeof Peer !== 'undefined') {
+        if (this.peer) {
+          try {
+            this.peer.destroy();
+          } catch (e) {}
+          this.peer = null;
+        }
+
         const myPeerId = `c8-client-${this.myPlayerId}`;
         const targetHostPeerId = `${PEER_PREFIX}${this.roomId.toLowerCase()}`;
 
@@ -221,20 +327,20 @@
           this.peer = new Peer(myPeerId, {
             debug: 1,
             config: {
-              iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:global.stun.twilio.com:3478' },
-              ],
+              iceServers: ICE_SERVERS,
             },
           });
 
           this.peer.on('open', () => {
-            const conn = this.peer.connect(targetHostPeerId, { reliable: true });
+            const conn = this.peer.connect(targetHostPeerId, {
+              reliable: true,
+              serialization: 'json',
+            });
             this.hostConnection = conn;
 
             conn.on('open', () => {
               this.notifyStatus('PEER_CONNECTED', `Connected to Host via WebRTC`);
-              sendJoinRequest();
+              this._sendJoinRequest();
             });
 
             conn.on('data', (data) => {
@@ -262,12 +368,24 @@
     // -------------------------------------------------------------
 
     _broadcastMessage(msg) {
+      if (!msg) return;
+      if (!msg._msgId) {
+        msg._msgId =
+          this.myPlayerId +
+          '-' +
+          Date.now().toString(36) +
+          '-' +
+          Math.random().toString(36).slice(2, 7);
+      }
+
+      // 1. Same-browser BroadcastChannel
       if (this.broadcastChannel) {
         try {
           this.broadcastChannel.postMessage(msg);
         } catch (e) {}
       }
-      // Cross-tab fallback bus via localStorage
+
+      // 2. Same-browser localStorage fallback
       if (this.roomId && typeof localStorage !== 'undefined') {
         try {
           localStorage.setItem(
@@ -276,11 +394,27 @@
           );
         } catch (e) {}
       }
+
+      // 3. Port-443 WSS Cloud Relay (cross-device, cross-firewall)
+      if (this.wssClients && this.wssClients.length > 0 && this.wssTopic) {
+        const payloadStr = JSON.stringify(msg);
+        this.wssClients.forEach((client) => {
+          try {
+            if (client.connected) {
+              client.publish(this.wssTopic, payloadStr, { qos: 0 });
+            }
+          } catch (e) {}
+        });
+      }
+
+      // 4. Host WebRTC DataChannels
       for (const conn of this.connections.values()) {
         try {
           if (conn.open) conn.send(msg);
         } catch (e) {}
       }
+
+      // 5. Client WebRTC DataChannel to Host
       if (this.hostConnection && this.hostConnection.open) {
         try {
           this.hostConnection.send(msg);
@@ -332,23 +466,27 @@
     _handleIncomingMessage(msg, conn) {
       if (!msg || !msg.type) return;
 
+      // Packet deduplication across multi-transport arrivals
+      if (msg._msgId) {
+        if (this.seenMsgIds.has(msg._msgId)) return;
+        this.seenMsgIds.add(msg._msgId);
+        if (this.seenMsgIds.size > 600) {
+          const first = this.seenMsgIds.values().next().value;
+          this.seenMsgIds.delete(first);
+        }
+      }
+
+      if (conn && conn.peer) {
+        this.connections.set(conn.peer, conn);
+      }
+
       if (msg.type === 'TELEMETRY') {
         if (msg.senderId !== this.myPlayerId && this.onRemoteTelemetry) {
           this.onRemoteTelemetry(msg);
         }
-        // If Host, relay telemetry to all other connected peers
+        // If Host, relay telemetry to all other connected peers across transports
         if (this.isHost) {
-          for (const [peerId, otherConn] of this.connections.entries()) {
-            if (conn && otherConn === conn) continue;
-            try {
-              if (otherConn.open) otherConn.send(msg);
-            } catch (e) {}
-          }
-          if (this.broadcastChannel) {
-            try {
-              this.broadcastChannel.postMessage(msg);
-            } catch (e) {}
-          }
+          this._broadcastMessage(msg);
         }
         return;
       }
