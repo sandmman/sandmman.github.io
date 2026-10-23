@@ -590,9 +590,13 @@ body {
 .hand-card-wrapper {
   position: absolute;
   bottom: 0;
+  z-index: var(--base-z, 10);
   transform-origin: bottom center;
-  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), z-index 0.1s;
+  transform: translate3d(var(--base-x, 0px), var(--base-y, 0px), 0) rotate(var(--base-rot, 0deg));
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+  will-change: transform;
   cursor: grab;
+  touch-action: none;
 }
 .hand-card-wrapper:active { cursor: grabbing; }
 
@@ -600,18 +604,24 @@ body {
   border: 2px solid #22c55e;
   box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
 }
-.hand-card-wrapper:hover:not(.dragging) {
-  transform: translateY(-24px) scale(1.1) !important;
-  z-index: 50 !important;
+
+/* Subtle elevation on hover without wiping horizontal slot */
+.hand-fan-track:not(.dragging-active) .hand-card-wrapper:hover:not(.dragging) {
+  transform: translate3d(var(--base-x, 0px), calc(var(--base-y, 0px) - 24px), 0) rotate(calc(var(--base-rot, 0deg) * 0.4)) scale(1.06);
+  z-index: 60;
 }
 
 .hand-card-wrapper.selected .table-card {
   border: 3px solid var(--gold) !important;
   box-shadow: 0 0 20px rgba(245, 158, 11, 0.8) !important;
 }
-.hand-card-wrapper.selected {
-  transform: translateY(-30px) !important;
-  z-index: 45 !important;
+.hand-card-wrapper.selected:not(.dragging) {
+  transform: translate3d(var(--base-x, 0px), calc(var(--base-y, 0px) - 20px), 0) rotate(var(--base-rot, 0deg));
+  z-index: calc(var(--base-z, 10) + 25);
+}
+.hand-fan-track:not(.dragging-active) .hand-card-wrapper.selected:hover:not(.dragging) {
+  transform: translate3d(var(--base-x, 0px), calc(var(--base-y, 0px) - 28px), 0) rotate(calc(var(--base-rot, 0deg) * 0.4)) scale(1.06);
+  z-index: 65;
 }
 
 .selection-order-badge {
@@ -643,20 +653,23 @@ body {
 
 .remote-ghost-card {
   position: absolute;
+  top: 0;
+  left: 0;
   width: var(--card-width);
   height: var(--card-height);
   border-radius: 8px;
   pointer-events: none;
   z-index: 900;
-  transition: transform 0.05s linear;
-  box-shadow: 0 12px 25px rgba(0,0,0,0.6);
+  will-change: transform;
+  transition: transform 0.085s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.65);
 }
 .remote-ghost-badge {
   position: absolute;
   top: -20px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0,0,0,0.8);
+  background: rgba(0,0,0,0.85);
   color: var(--gold);
   font-size: 0.65rem;
   font-weight: 800;
@@ -664,6 +677,12 @@ body {
   border-radius: 4px;
   white-space: nowrap;
   border: 1px solid var(--gold);
+}
+
+.mini-card-back.ghost-lifted {
+  opacity: 0.15;
+  transform: translateY(6px) scale(0.85) !important;
+  transition: all 0.18s ease;
 }
 
 /* Action Controls Dock */

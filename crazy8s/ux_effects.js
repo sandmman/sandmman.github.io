@@ -251,8 +251,10 @@
         const wrap = document.createElement('div');
         wrap.className = `hand-card-wrapper ${isPlayable ? 'playable' : ''} ${isSel ? 'selected' : ''}`;
         wrap.dataset.cardId = card.id;
-        wrap.style.transform = `translateX(${xOffset}px) translateY(${yOffset}px) rotate(${rot}deg)`;
-        wrap.style.zIndex = 10 + idx;
+        wrap.style.setProperty('--base-x', `${xOffset}px`);
+        wrap.style.setProperty('--base-y', `${yOffset}px`);
+        wrap.style.setProperty('--base-rot', `${rot}deg`);
+        wrap.style.setProperty('--base-z', `${10 + idx}`);
 
         const r = getRankStr(card.rank);
         const s = SUIT_SYMBOLS[card.suit];
@@ -291,19 +293,20 @@
       let currentY = 0;
       let isDragging = false;
       let lastTime = 0;
-      let velX = 0;
-      let velY = 0;
+      let smoothTiltX = 0;
+      let smoothTiltY = 0;
 
       const dropZone = document.getElementById('discard-drop-zone');
       const reticle = document.getElementById('drop-target-reticle');
-      const centerFelt = document.getElementById('center-felt');
 
       const onPointerDown = (e) => {
         startX = e.clientX;
         startY = e.clientY;
+        currentX = e.clientX;
+        currentY = e.clientY;
         lastTime = performance.now();
-        velX = 0;
-        velY = 0;
+        smoothTiltX = 0;
+        smoothTiltY = 0;
         cardEl.dataset.wasDragged = 'false';
 
         cardEl.setPointerCapture(e.pointerId);
@@ -316,36 +319,41 @@
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
 
-        if (!isDragging && Math.hypot(dx, dy) > 8) {
+        if (!isDragging && Math.hypot(dx, dy) > 10) {
           isDragging = true;
           cardEl.dataset.wasDragged = 'true';
           cardEl.classList.add('dragging');
+          const trackEl = document.getElementById('hand-fan-track');
+          if (trackEl) trackEl.classList.add('dragging-active');
           audio.play('card_slide');
         }
 
         if (isDragging) {
           const now = performance.now();
-          const dt = Math.max(1, now - lastTime);
-          velX = (e.clientX - currentX) / dt;
-          velY = (e.clientY - currentY) / dt;
+          const dt = Math.max(8, now - lastTime);
+          const velX = (e.clientX - currentX) / dt;
+          const velY = (e.clientY - currentY) / dt;
           lastTime = now;
           currentX = e.clientX;
           currentY = e.clientY;
 
-          // 3D perspective velocity tilt
-          const tiltX = Math.max(-25, Math.min(25, -velY * 18));
-          const tiltY = Math.max(-25, Math.min(25, velX * 18));
+          // Exponential low-pass filter for smooth 3D tilt
+          const targetTiltX = Math.max(-14, Math.min(14, -velY * 10));
+          const targetTiltY = Math.max(-14, Math.min(14, velX * 10));
+          smoothTiltX = smoothTiltX * 0.78 + targetTiltX * 0.22;
+          smoothTiltY = smoothTiltY * 0.78 + targetTiltY * 0.22;
 
-          cardEl.style.transform = `translate(${dx}px, ${dy}px) rotateX(${tiltX}deg) rotateY(${tiltY}deg) scale(1.12)`;
+          // Drag offset relative to base card slot (no horizontal jumping)
+          cardEl.style.transform = `translate3d(calc(var(--base-x, 0px) + ${dx}px), calc(var(--base-y, 0px) + ${dy}px), 0) rotateX(${smoothTiltX.toFixed(1)}deg) rotateY(${smoothTiltY.toFixed(1)}deg) scale(1.08)`;
 
           // Check if hovering over Discard Pile drop zone
           if (dropZone && reticle) {
             const rect = dropZone.getBoundingClientRect();
             const inZone =
-              e.clientX >= rect.left - 20 &&
-              e.clientX <= rect.right + 20 &&
-              e.clientY >= rect.top - 20 &&
-              e.clientY <= rect.bottom + 20;
+              e.clientX >= rect.left - 25 &&
+              e.clientX <= rect.right + 25 &&
+              e.clientY >= rect.top - 25 &&
+              e.clientY <= rect.bottom + 25;
 
             if (inZone) {
               reticle.classList.add('active');
@@ -354,20 +362,25 @@
             }
           }
 
-          // Throttle broadcast normalized telemetry to peers (~30fps)
-          if (centerFelt && window.Crazy8Network && !this.throttleTimer) {
+          // Throttle broadcast hand-to-discard progress telemetry to peers (~30fps)
+          if (dropZone && window.Crazy8Network && !this.throttleTimer) {
             this.throttleTimer = setTimeout(() => {
               this.throttleTimer = null;
-              const fRect = centerFelt.getBoundingClientRect();
-              const nx = (e.clientX - fRect.left) / fRect.width;
-              const ny = (e.clientY - fRect.top) / fRect.height;
+              const dRect = dropZone.getBoundingClientRect();
+              const dropCenterY = dRect.top + dRect.height / 2;
+              const distY = Math.max(100, startY - dropCenterY);
+              // v: 0 when pointer at hand, 1 when at drop zone
+              const v = Math.max(-0.15, Math.min(1.25, (startY - e.clientY) / distY));
+              // u: lateral offset (-1 left to +1 right)
+              const u = Math.max(-1.2, Math.min(1.2, (e.clientX - startX) / distY));
+
               window.Crazy8Network.sendTelemetry({
                 type: 'DRAG_MOVE',
                 cardId: card.id,
-                nx: nx,
-                ny: ny,
-                tiltX: tiltX,
-                tiltY: tiltY,
+                v: v,
+                u: u,
+                tiltX: smoothTiltX,
+                tiltY: smoothTiltY,
               });
             }, 33);
           }
@@ -378,6 +391,9 @@
         cardEl.removeEventListener('pointermove', onPointerMove);
         cardEl.removeEventListener('pointerup', onPointerUp);
         cardEl.removeEventListener('pointercancel', onPointerUp);
+
+        const trackEl = document.getElementById('hand-fan-track');
+        if (trackEl) trackEl.classList.remove('dragging-active');
 
         if (reticle) reticle.classList.remove('active');
 
@@ -390,14 +406,14 @@
             window.Crazy8Network.sendTelemetry({ type: 'DRAG_END', cardId: card.id });
           }
 
-          // Check drop zone collision
+          // Check drop zone collision with generous snap margin
           if (dropZone) {
             const rect = dropZone.getBoundingClientRect();
             const droppedInZone =
-              e.clientX >= rect.left - 30 &&
-              e.clientX <= rect.right + 30 &&
-              e.clientY >= rect.top - 30 &&
-              e.clientY <= rect.bottom + 30;
+              e.clientX >= rect.left - 42 &&
+              e.clientX <= rect.right + 42 &&
+              e.clientY >= rect.top - 42 &&
+              e.clientY <= rect.bottom + 42;
 
             if (droppedInZone) {
               audio.play('card_snap');
@@ -408,7 +424,7 @@
             }
           }
 
-          // Reset position if dropped outside
+          // Reset transform so card smoothly springs back to its fan slot
           cardEl.style.transform = '';
         }
       };
@@ -498,16 +514,58 @@
       }
 
       if (data.type === 'DRAG_END') {
-        if (remoteGhosts.has(senderId)) {
-          const el = remoteGhosts.get(senderId);
+        const ghostId = senderId || data.botId;
+        if (remoteGhosts.has(ghostId)) {
+          const el = remoteGhosts.get(ghostId);
           el.remove();
-          remoteGhosts.delete(senderId);
+          remoteGhosts.delete(ghostId);
+        }
+        // Remove ghost-lifted class from opponent mini-card fan
+        const seat = document.getElementById(`seat-${ghostId}`);
+        if (seat) {
+          const lifted = seat.querySelectorAll('.mini-card-back.ghost-lifted');
+          lifted.forEach((c) => c.classList.remove('ghost-lifted'));
         }
         return;
       }
 
       if (data.type === 'DRAG_MOVE' || data.type === 'BOT_DRAG') {
-        let ghost = remoteGhosts.get(senderId || data.botId);
+        const ghostId = senderId || data.botId;
+        let ghost = remoteGhosts.get(ghostId);
+
+        // Find the opponent's seat in the DOM (top of the table)
+        const seatEl = document.getElementById(`seat-${ghostId}`);
+        const miniFan = seatEl ? seatEl.querySelector('.mini-card-fan') : null;
+
+        // Lift one card visually from their hand while dragging
+        if (miniFan) {
+          const cards = miniFan.querySelectorAll('.mini-card-back');
+          if (cards.length > 0 && !miniFan.querySelector('.ghost-lifted')) {
+            cards[cards.length - 1].classList.add('ghost-lifted');
+          }
+        }
+
+        const fRect = centerFelt.getBoundingClientRect();
+        const dropZone = document.getElementById('discard-drop-zone');
+        const dRect = dropZone ? dropZone.getBoundingClientRect() : fRect;
+
+        // Target is the discard pile center relative to centerFelt
+        const targetX = dRect.left + dRect.width / 2 - fRect.left;
+        const targetY = dRect.top + dRect.height / 2 - fRect.top;
+
+        // Origin is the opponent's seat/mini-card-fan relative to centerFelt
+        let seatX = fRect.width * 0.5;
+        let seatY = -20;
+        if (miniFan) {
+          const sRect = miniFan.getBoundingClientRect();
+          seatX = sRect.left + sRect.width / 2 - fRect.left;
+          seatY = sRect.top + sRect.height / 2 - fRect.top;
+        } else if (seatEl) {
+          const sRect = seatEl.getBoundingClientRect();
+          seatX = sRect.left + sRect.width / 2 - fRect.left;
+          seatY = sRect.top + sRect.height / 2 - fRect.top;
+        }
+
         if (!ghost) {
           ghost = document.createElement('div');
           ghost.className = 'table-card card-back remote-ghost-card';
@@ -516,19 +574,24 @@
             <div class="remote-ghost-badge">${name} dragging...</div>
             <span class="draw-pile-text">🂠</span>
           `;
+          // Position initially right at opponent's seat
+          ghost.style.transform = `translate3d(${seatX - 38}px, ${seatY - 55}px, 0) scale(0.85)`;
           centerFelt.appendChild(ghost);
-          remoteGhosts.set(senderId || data.botId, ghost);
+          remoteGhosts.set(ghostId, ghost);
         }
 
-        const fRect = centerFelt.getBoundingClientRect();
-        const px = data.nx * fRect.width;
-        const py = data.ny * fRect.height;
+        // v: 0 at opponent seat -> 1 at discard pile
+        const v = typeof data.v === 'number' ? data.v : (typeof data.progress === 'number' ? data.progress : 0.5);
+        const u = typeof data.u === 'number' ? data.u : 0;
+
+        // Interpolate along seat-to-discard vector, factoring lateral offset u
+        const px = seatX + (targetX - seatX) * v - u * 120;
+        const py = seatY + (targetY - seatY) * v;
         const tiltX = data.tiltX || 0;
         const tiltY = data.tiltY || 0;
+        const scale = 0.88 + Math.min(1, Math.max(0, v)) * 0.2;
 
-        ghost.style.left = `${px - 38}px`;
-        ghost.style.top = `${py - 55}px`;
-        ghost.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg) scale(1.08)`;
+        ghost.style.transform = `translate3d(${px - 38}px, ${py - 55}px, 0) rotateX(${tiltX.toFixed(1)}deg) rotateY(${tiltY.toFixed(1)}deg) rotateZ(${((1 - v) * 8).toFixed(1)}deg) scale(${scale.toFixed(2)})`;
       }
     }
 

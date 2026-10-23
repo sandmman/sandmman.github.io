@@ -485,6 +485,8 @@
             seatIndex: botSeatIdx,
             target: plan.target || 'discard',
             progress: progress,
+            v: progress,
+            u: 0,
             nx: curX,
             ny: curY,
           });
