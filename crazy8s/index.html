@@ -502,7 +502,15 @@
           room,
           myTurn,
           (card) => toggleCardSelection(card, me.hand),
-          (cardIds, targetSuit) => executePlayAction(cardIds, targetSuit),
+          (cardIds, targetSuit) => {
+            const first = me.hand.find(c => c.id === cardIds[0]);
+            if (first && first.rank === 8 && !targetSuit) {
+              selectedCards = cardIds;
+              document.getElementById("wild-modal").style.display = "flex";
+              return;
+            }
+            executePlayAction(cardIds, targetSuit);
+          },
           () => executeDrawAction()
         );
       }

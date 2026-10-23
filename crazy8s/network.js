@@ -257,6 +257,18 @@
         data: data,
       };
       this._broadcastMessage(msg);
+      // Host triggers its own onRemoteTelemetry for bot events so the local screen reflects bot gestures
+      if (
+        this.isHost &&
+        this.onRemoteTelemetry &&
+        (data.type === 'BOT_DRAG' || (data.type === 'DRAG_END' && data.botId))
+      ) {
+        this.onRemoteTelemetry({
+          senderId: data.botId || this.myPlayerId,
+          senderName: data.botName || this.myPlayerName,
+          data: data,
+        });
+      }
     }
 
     sendEmote(emoji) {
@@ -288,6 +300,7 @@
       }
 
       if (msg.type === 'SYNC_STATE') {
+        if (msg.recipientId && msg.recipientId !== this.myPlayerId) return;
         if (this.onStateUpdate && msg.room) {
           this.onStateUpdate(msg.room);
         }
@@ -379,11 +392,24 @@
         progress += 1 / steps;
         if (progress >= 1) {
           clearInterval(dragInterval);
+          this.sendTelemetry({
+            type: 'DRAG_END',
+            botId: curPlayer.id,
+            botName: curPlayer.name,
+          });
           // Commit bot turn
           window.Crazy8Engine.executeBotTurn(this.hostRoom);
           this._broadcastRoomState();
           this._checkBotTurn(); // Next turn check
         } else {
+          // Curved trajectory from bot seat toward center felt (0.5, 0.5)
+          const totalPlayers = this.hostRoom.players.length || 1;
+          const angle = (botSeatIdx / totalPlayers) * 2 * Math.PI - Math.PI / 2;
+          const startX = 0.5 + 0.35 * Math.cos(angle);
+          const startY = 0.5 + 0.35 * Math.sin(angle);
+          const curX = startX + (0.5 - startX) * progress;
+          const curY = startY + (0.5 - startY) * progress;
+
           // Emit synthetic drag trajectory toward center discard pile
           this.sendTelemetry({
             type: 'BOT_DRAG',
@@ -392,6 +418,8 @@
             seatIndex: botSeatIdx,
             target: plan.target || 'discard',
             progress: progress,
+            nx: curX,
+            ny: curY,
           });
         }
       }, intervalMs);
