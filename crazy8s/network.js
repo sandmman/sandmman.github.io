@@ -1,5 +1,10 @@
 /**
- * Crazy 8s WebRTC P2P Network Layer (PeerJS + BroadcastChannel)
+ * Crazy 8s Multi-Transport Cross-Computer Network Layer
+ * Transports (all active in parallel with automatic _msgId deduplication):
+ *   1. Port-443 MQTT over WSS (wss://public.cloud.shiftr.io:443/mqtt + EMQX/HiveMQ)
+ *   2. Port-443 HTTPS/WSS Native Pub/Sub Relay (ntfy.sh WSS + SSE + HTTPS POST)
+ *   3. WebRTC DataChannels via PeerJS (0.peerjs.com:443 + Google/Cloudflare STUN)
+ *   4. Same-Browser BroadcastChannel + localStorage storage events
  * Exposes window.Crazy8Network
  */
 
@@ -14,26 +19,27 @@
 
   const PEER_PREFIX = 'crazy8s-sandmman-';
 
+  // Fast, reachable STUN servers only (dead openrelay.metered.ca removed so ICE never stalls)
   const ICE_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp',
-        'turns:openrelay.metered.ca:443?transport=tcp',
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
   ];
 
+  // Primary broker uses standard Port 443 so corporate/campus firewalls never block it
   const WSS_BROKERS = [
-    'wss://broker.emqx.io:8084/mqtt',
-    'wss://broker.hivemq.com:8884/mqtt',
+    {
+      url: 'wss://public.cloud.shiftr.io:443/mqtt',
+      options: { username: 'public', password: 'public' },
+    },
+    {
+      url: 'wss://broker.emqx.io:8084/mqtt',
+      options: {},
+    },
+    {
+      url: 'wss://broker.hivemq.com:8884/mqtt',
+      options: {},
+    },
   ];
 
   class NetworkController {
@@ -47,9 +53,12 @@
       this.broadcastChannel = null;
       this.hostConnection = null;
 
-      // WSS Cloud Relay Fallback
+      // Port-443 WSS & HTTPS Cloud Relays
       this.wssClients = [];
       this.wssTopic = null;
+      this.ntfyTopic = null;
+      this.ntfyWs = null;
+      this.ntfySse = null;
       this.seenMsgIds = new Set();
 
       // Host State
@@ -88,7 +97,6 @@
         }
       }
 
-      // Cross-tab fallback via storage events for same-origin tabs
       if (typeof window !== 'undefined' && window.addEventListener) {
         if (this._storageListener) {
           window.removeEventListener('storage', this._storageListener);
@@ -106,6 +114,58 @@
       }
     }
 
+    _setupNtfyRelay(roomId) {
+      const roomKey = roomId.toLowerCase();
+      this.ntfyTopic = `c8_sandmman_v3_${roomKey}`;
+
+      if (this.ntfyWs) {
+        try {
+          this.ntfyWs.close();
+        } catch (e) {}
+        this.ntfyWs = null;
+      }
+      if (this.ntfySse) {
+        try {
+          this.ntfySse.close();
+        } catch (e) {}
+        this.ntfySse = null;
+      }
+
+      const handleNtfyEvent = (rawText) => {
+        try {
+          const wrapper = JSON.parse(rawText);
+          if (wrapper && wrapper.event === 'message' && wrapper.message) {
+            const msg = JSON.parse(wrapper.message);
+            if (!msg || msg.senderId === this.myPlayerId) return;
+            this._handleIncomingMessage(msg);
+          }
+        } catch (e) {}
+      };
+
+      // 1. Native Port-443 WebSocket stream (wss://ntfy.sh/.../ws)
+      if (typeof WebSocket !== 'undefined') {
+        try {
+          const ws = new WebSocket(`wss://ntfy.sh/${this.ntfyTopic}/ws`);
+          ws.onopen = () => {
+            if (!this.isHost && !this.hasSynced && typeof this._sendJoinRequest === 'function') {
+              this._sendJoinRequest();
+            }
+          };
+          ws.onmessage = (evt) => handleNtfyEvent(evt.data);
+          this.ntfyWs = ws;
+        } catch (e) {}
+      }
+
+      // 2. Native Port-443 Server-Sent Events stream (https://ntfy.sh/.../sse)
+      if (typeof EventSource !== 'undefined') {
+        try {
+          const sse = new EventSource(`https://ntfy.sh/${this.ntfyTopic}/sse`);
+          sse.onmessage = (evt) => handleNtfyEvent(evt.data);
+          this.ntfySse = sse;
+        } catch (e) {}
+      }
+    }
+
     _setupWssRelay(roomId) {
       if (this.wssClients && this.wssClients.length > 0) {
         this.wssClients.forEach((client) => {
@@ -116,29 +176,32 @@
         this.wssClients = [];
       }
 
-      this.wssTopic = `crazy8s/sandmman/v2/${roomId.toLowerCase()}`;
+      this.wssTopic = `crazy8s/sandmman/v3/${roomId.toLowerCase()}`;
 
       if (typeof mqtt === 'undefined') {
         console.warn('[WSS] MQTT.js client library not available on page');
         return;
       }
 
-      WSS_BROKERS.forEach((brokerUrl) => {
+      WSS_BROKERS.forEach((broker) => {
         try {
           const clientId = `c8_${this.myPlayerId}_${Math.random().toString(36).slice(2, 7)}`;
-          const client = mqtt.connect(brokerUrl, {
+          const client = mqtt.connect(broker.url, {
+            ...broker.options,
             clientId: clientId,
             clean: true,
-            connectTimeout: 6000,
-            reconnectPeriod: 2500,
+            connectTimeout: 5000,
+            reconnectPeriod: 2000,
           });
 
           client.on('connect', () => {
-            console.log(`[WSS] Connected to Cloud Relay: ${brokerUrl}`);
+            console.log(`[WSS] Connected to Cloud Relay: ${broker.url}`);
             client.subscribe(this.wssTopic, { qos: 0 }, (err) => {
               if (!err) {
                 if (this.isHost) {
                   this.notifyStatus('HOST_READY', `Hosting Room: ${this.roomId}`);
+                  // Publish retained room state so late subscribers immediately discover the room
+                  this._broadcastRoomState();
                 } else if (!this.hasSynced && typeof this._sendJoinRequest === 'function') {
                   this._sendJoinRequest();
                 }
@@ -149,20 +212,22 @@
           client.on('message', (topic, payload) => {
             if (topic !== this.wssTopic) return;
             try {
-              const msg = JSON.parse(payload.toString());
+              const text =
+                typeof payload === 'string'
+                  ? payload
+                  : typeof TextDecoder !== 'undefined'
+                  ? new TextDecoder().decode(payload)
+                  : payload.toString();
+              const msg = JSON.parse(text);
               if (!msg || msg.senderId === this.myPlayerId) return;
               this._handleIncomingMessage(msg);
             } catch (err) {}
           });
 
-          client.on('error', (err) => {
-            console.warn(`[WSS] Broker error on ${brokerUrl}:`, err);
-          });
+          client.on('error', () => {});
 
           this.wssClients.push(client);
-        } catch (e) {
-          console.warn(`[WSS] Init error on ${brokerUrl}:`, e);
-        }
+        } catch (e) {}
       });
     }
 
@@ -188,28 +253,30 @@
       );
 
       this._setupBroadcastChannel(this.roomId);
+      this._setupNtfyRelay(this.roomId);
       this._setupWssRelay(this.roomId);
       this._initPeerHost(this.roomId);
 
+      const publicState = window.Crazy8Engine.getPublicRoomState(
+        this.hostRoom,
+        this.myPlayerId
+      );
       if (this.onStateUpdate) {
-        this.onStateUpdate(
-          window.Crazy8Engine.getPublicRoomState(this.hostRoom, this.myPlayerId)
-        );
+        this.onStateUpdate(publicState);
       }
 
       return {
         roomId: this.roomId,
         playerId: this.myPlayerId,
-        room: window.Crazy8Engine.getPublicRoomState(this.hostRoom, this.myPlayerId),
+        room: publicState,
       };
     }
 
     _initPeerHost(roomId) {
       const fullPeerId = `${PEER_PREFIX}${roomId.toLowerCase()}`;
-      this.notifyStatus('CONNECTING', 'Registering WebRTC Peer...');
+      this.notifyStatus('HOST_READY', `Hosting Room: ${roomId}`);
 
       if (typeof Peer === 'undefined') {
-        this.notifyStatus('HOST_READY', `Hosting Room: ${roomId} (WSS Cloud Relay active)`);
         return;
       }
 
@@ -228,12 +295,11 @@
           },
         });
 
-        this.peer.on('open', (id) => {
+        this.peer.on('open', () => {
           this.notifyStatus('HOST_READY', `Hosting Room: ${roomId}`);
         });
 
         this.peer.on('connection', (conn) => {
-          // Immediately register connection so early data frames find the peer
           this.connections.set(conn.peer, conn);
 
           conn.on('open', () => {
@@ -251,27 +317,24 @@
             this.connections.delete(conn.peer);
           });
 
-          conn.on('error', (err) => {
-            console.warn('[Host Conn Error]:', err);
-          });
+          conn.on('error', () => {});
         });
 
-        this.peer.on('error', (err) => {
-          console.warn('[PeerJS Host Error]:', err);
-          this.notifyStatus('HOST_READY', `Hosting Room: ${roomId} (Cloud Relay active)`);
+        this.peer.on('error', () => {
+          this.notifyStatus('HOST_READY', `Hosting Room: ${roomId}`);
         });
-      } catch (e) {
-        console.warn('[PeerJS Init Error]:', e);
-      }
+      } catch (e) {}
     }
 
     // -------------------------------------------------------------
     // CLIENT / PEER MODE
     // -------------------------------------------------------------
 
-    joinRoom(roomId, playerName, existingPlayerId = null) {
+    joinRoom(rawRoomId, playerName, existingPlayerId = null) {
       this.isHost = false;
-      this.roomId = roomId.toUpperCase();
+      // Extract clean room code even if user pasted a full invite URL
+      const match = String(rawRoomId || '').match(/R\d{4}/i);
+      this.roomId = (match ? match[0] : String(rawRoomId || '').trim()).toUpperCase();
       this.myPlayerId =
         existingPlayerId ||
         'p-' +
@@ -282,6 +345,7 @@
       this.hasSynced = false;
 
       this._setupBroadcastChannel(this.roomId);
+      this._setupNtfyRelay(this.roomId);
       this._setupWssRelay(this.roomId);
       this.notifyStatus('CONNECTING', `Connecting to Room ${this.roomId}...`);
 
@@ -298,20 +362,20 @@
       // Send initial discovery request
       this._sendJoinRequest();
 
-      // Retry join handshake every 800ms up to 45 times (36s) until Host syncs state
+      // Retry join handshake every 1.2s up to 35 times until Host syncs state
       if (this.joinRetryTimer) clearInterval(this.joinRetryTimer);
       let attempts = 0;
       this.joinRetryTimer = setInterval(() => {
-        if (this.hasSynced || attempts >= 45) {
+        if (this.hasSynced || attempts >= 35) {
           clearInterval(this.joinRetryTimer);
           this.joinRetryTimer = null;
           return;
         }
         attempts++;
         this._sendJoinRequest();
-      }, 800);
+      }, 1200);
 
-      // Also connect via PeerJS with TURN relay servers
+      // Parallel WebRTC DataChannel attempt
       if (typeof Peer !== 'undefined') {
         if (this.peer) {
           try {
@@ -339,25 +403,15 @@
             this.hostConnection = conn;
 
             conn.on('open', () => {
-              this.notifyStatus('PEER_CONNECTED', `Connected to Host via WebRTC`);
+              this.notifyStatus('PEER_CONNECTED', `Connected to Room ${this.roomId}`);
               this._sendJoinRequest();
             });
 
             conn.on('data', (data) => {
               this._handleIncomingMessage(data, conn);
             });
-
-            conn.on('error', (err) => {
-              console.warn('[Client Conn Error]:', err);
-            });
           });
-
-          this.peer.on('error', (err) => {
-            console.warn('[Client Peer Error]:', err);
-          });
-        } catch (e) {
-          console.warn('[Client PeerJS Init Error]:', e);
-        }
+        } catch (e) {}
       }
 
       return { roomId: this.roomId, playerId: this.myPlayerId };
@@ -367,7 +421,7 @@
     // MESSAGE BUS & RPC HANDLING
     // -------------------------------------------------------------
 
-    _broadcastMessage(msg) {
+    _broadcastMessage(msg, options = {}) {
       if (!msg) return;
       if (!msg._msgId) {
         msg._msgId =
@@ -377,6 +431,8 @@
           '-' +
           Math.random().toString(36).slice(2, 7);
       }
+
+      const payloadStr = JSON.stringify(msg);
 
       // 1. Same-browser BroadcastChannel
       if (this.broadcastChannel) {
@@ -395,26 +451,40 @@
         } catch (e) {}
       }
 
-      // 3. Port-443 WSS Cloud Relay (cross-device, cross-firewall)
+      // 3. Port-443 WSS MQTT Cloud Relays (shiftr.io:443 + EMQX + HiveMQ)
       if (this.wssClients && this.wssClients.length > 0 && this.wssTopic) {
-        const payloadStr = JSON.stringify(msg);
+        const pubOpts = { qos: 0, retain: !!options.retain };
         this.wssClients.forEach((client) => {
           try {
             if (client.connected) {
-              client.publish(this.wssTopic, payloadStr, { qos: 0 });
+              client.publish(this.wssTopic, payloadStr, pubOpts);
             }
           } catch (e) {}
         });
       }
 
-      // 4. Host WebRTC DataChannels
+      // 4. Port-443 HTTPS Native Relay (ntfy.sh) for all control & state packets
+      if (
+        this.ntfyTopic &&
+        typeof fetch !== 'undefined' &&
+        (msg.type === 'RPC_REQUEST' || msg.type === 'SYNC_STATE')
+      ) {
+        try {
+          fetch(`https://ntfy.sh/${this.ntfyTopic}`, {
+            method: 'POST',
+            body: payloadStr,
+          }).catch(() => {});
+        } catch (e) {}
+      }
+
+      // 5. Host WebRTC DataChannels
       for (const conn of this.connections.values()) {
         try {
           if (conn.open) conn.send(msg);
         } catch (e) {}
       }
 
-      // 5. Client WebRTC DataChannel to Host
+      // 6. Client WebRTC DataChannel to Host
       if (this.hostConnection && this.hostConnection.open) {
         try {
           this.hostConnection.send(msg);
@@ -426,7 +496,6 @@
       if (this.isHost) {
         return this.executeHostAction(action, { ...payload, playerId: this.myPlayerId });
       }
-      // Send to Host
       const msg = {
         type: 'RPC_REQUEST',
         action: action,
@@ -445,7 +514,6 @@
         data: data,
       };
       this._broadcastMessage(msg);
-      // Host triggers its own onRemoteTelemetry for bot events so the local screen reflects bot gestures
       if (
         this.isHost &&
         this.onRemoteTelemetry &&
@@ -470,7 +538,7 @@
       if (msg._msgId) {
         if (this.seenMsgIds.has(msg._msgId)) return;
         this.seenMsgIds.add(msg._msgId);
-        if (this.seenMsgIds.size > 600) {
+        if (this.seenMsgIds.size > 800) {
           const first = this.seenMsgIds.values().next().value;
           this.seenMsgIds.delete(first);
         }
@@ -484,7 +552,6 @@
         if (msg.senderId !== this.myPlayerId && this.onRemoteTelemetry) {
           this.onRemoteTelemetry(msg);
         }
-        // If Host, relay telemetry to all other connected peers across transports
         if (this.isHost) {
           this._broadcastMessage(msg);
         }
@@ -492,8 +559,27 @@
       }
 
       if (msg.type === 'SYNC_STATE') {
+        if (this.isHost) return;
         if (msg.recipientId && msg.recipientId !== this.myPlayerId) return;
-        if (!this.isHost && !this.hasSynced) {
+
+        const rawRoom = msg.rawRoom || msg.room;
+        if (!rawRoom) return;
+
+        // Check if this client is already seated in the room roster
+        const amISeated =
+          Array.isArray(rawRoom.players) &&
+          rawRoom.players.some((p) => p.id === this.myPlayerId);
+
+        if (!amISeated) {
+          // We received a retained or broadcast room state before our joinRoom was processed;
+          // immediately fire joinRoom so the Host adds us and re-broadcasts!
+          if (typeof this._sendJoinRequest === 'function') {
+            this._sendJoinRequest();
+          }
+          return;
+        }
+
+        if (!this.hasSynced) {
           this.hasSynced = true;
           if (this.joinRetryTimer) {
             clearInterval(this.joinRetryTimer);
@@ -501,8 +587,14 @@
           }
           this.notifyStatus('PEER_CONNECTED', `Connected to Room ${this.roomId}`);
         }
-        if (this.onStateUpdate && msg.room) {
-          this.onStateUpdate(msg.room);
+
+        const sanitized =
+          msg.rawRoom && window.Crazy8Engine
+            ? window.Crazy8Engine.getPublicRoomState(msg.rawRoom, this.myPlayerId)
+            : msg.room;
+
+        if (this.onStateUpdate && sanitized) {
+          this.onStateUpdate(sanitized);
         }
         return;
       }
@@ -529,7 +621,15 @@
       if (action === 'joinRoom') {
         res = E.addPlayer(room, playerId, payload.playerName, false);
       } else if (action === 'addBot') {
-        const botNames = ['Bot Watson', 'Bot Ada', 'Bot Turing', 'Bot Pascal', 'Bot Hopper', 'Bot Knuth', 'Bot Lovelace'];
+        const botNames = [
+          'Bot Watson',
+          'Bot Ada',
+          'Bot Turing',
+          'Bot Pascal',
+          'Bot Hopper',
+          'Bot Knuth',
+          'Bot Lovelace',
+        ];
         const bName = payload.botName || botNames[room.players.length % botNames.length];
         const botId = 'bot_' + Math.random().toString(36).substr(2, 9);
         res = E.addPlayer(room, botId, bName, true);
@@ -556,23 +656,18 @@
       if (!this.isHost || !this.hostRoom) return;
       const E = window.Crazy8Engine;
 
-      // Broadcast to host's own UI
+      // Update host's own UI
       if (this.onStateUpdate) {
         this.onStateUpdate(E.getPublicRoomState(this.hostRoom, this.myPlayerId));
       }
 
-      // Broadcast sanitized state to each player
-      this.hostRoom.players.forEach((p) => {
-        if (p.is_bot || p.id === this.myPlayerId) return;
-        const pState = E.getPublicRoomState(this.hostRoom, p.id);
-        const packet = {
-          type: 'SYNC_STATE',
-          room: pState,
-          recipientId: p.id,
-          senderId: this.myPlayerId,
-        };
-        this._broadcastMessage(packet);
-      });
+      // Broadcast single retained SYNC_STATE packet across all transports
+      const packet = {
+        type: 'SYNC_STATE',
+        rawRoom: this.hostRoom,
+        senderId: this.myPlayerId,
+      };
+      this._broadcastMessage(packet, { retain: true });
     }
 
     _checkBotTurn() {
@@ -587,7 +682,6 @@
       const plan = window.Crazy8Engine.planBotAction(this.hostRoom);
       if (!plan) return;
 
-      // Paced Bot Gesture: Emit simulated drag telemetry over 650ms so humans see the bot drag!
       const botSeatIdx = this.hostRoom.current_player_index;
       let progress = 0;
       const steps = 10;
@@ -602,12 +696,10 @@
             botId: curPlayer.id,
             botName: curPlayer.name,
           });
-          // Commit bot turn
           window.Crazy8Engine.executeBotTurn(this.hostRoom);
           this._broadcastRoomState();
-          this._checkBotTurn(); // Next turn check
+          this._checkBotTurn();
         } else {
-          // Curved trajectory from bot seat toward center felt (0.5, 0.5)
           const totalPlayers = this.hostRoom.players.length || 1;
           const angle = (botSeatIdx / totalPlayers) * 2 * Math.PI - Math.PI / 2;
           const startX = 0.5 + 0.35 * Math.cos(angle);
@@ -615,7 +707,6 @@
           const curX = startX + (0.5 - startX) * progress;
           const curY = startY + (0.5 - startY) * progress;
 
-          // Emit synthetic drag trajectory toward center discard pile
           this.sendTelemetry({
             type: 'BOT_DRAG',
             botId: curPlayer.id,

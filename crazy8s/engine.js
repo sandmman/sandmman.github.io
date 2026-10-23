@@ -99,12 +99,6 @@
       if (playerName) existing.name = playerName;
       return { ok: true, msg: 'Player reconnected.' };
     }
-    if (room.status !== 'LOBBY') {
-      return { ok: false, error: 'Game already in progress.' };
-    }
-    if (room.players.length >= 8) {
-      return { ok: false, error: 'Room is full (maximum 8 players).' };
-    }
 
     // Disambiguate duplicate or generic default names
     let finalName = playerName ? playerName.trim() : '';
@@ -112,6 +106,51 @@
       finalName = `Player ${room.players.length + 1}`;
     } else if (room.players.some((p) => p.name === finalName)) {
       finalName = `${finalName} (${room.players.length + 1})`;
+    }
+
+    // If game is already in progress, allow a human player to take over a Bot seat or deal in
+    if (room.status !== 'LOBBY' && !isBot) {
+      const botSeat = room.players.find((p) => p.is_bot);
+      if (botSeat) {
+        const oldBotName = botSeat.name;
+        botSeat.id = playerId;
+        botSeat.name = finalName;
+        botSeat.is_bot = false;
+        botSeat.connected = true;
+        room.action_log.push(
+          `${finalName} took over ${oldBotName}'s seat at the table!`
+        );
+        room.updated_at = Date.now();
+        return { ok: true, msg: 'Player replaced bot in active game.' };
+      }
+      if (room.players.length < 8) {
+        const cardsPerPlayer = room.players.length + 1 >= 5 ? 7 : 6;
+        const hand = [];
+        for (let i = 0; i < cardsPerPlayer; i++) {
+          if (room.draw_pile.length === 0) reshuffleDiscardIntoDraw(room);
+          if (room.draw_pile.length > 0) hand.push(room.draw_pile.pop());
+        }
+        room.players.push({
+          id: playerId,
+          name: finalName,
+          is_bot: false,
+          hand: hand,
+          connected: true,
+        });
+        room.action_log.push(
+          `${finalName} joined the table mid-game (${room.players.length}/8).`
+        );
+        room.updated_at = Date.now();
+        return { ok: true, msg: 'Player dealt into active game.' };
+      }
+      return { ok: false, error: 'Room is full (maximum 8 players).' };
+    }
+
+    if (room.status !== 'LOBBY') {
+      return { ok: false, error: 'Game already in progress.' };
+    }
+    if (room.players.length >= 8) {
+      return { ok: false, error: 'Room is full (maximum 8 players).' };
     }
 
     room.players.push({

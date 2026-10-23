@@ -11,7 +11,10 @@
   <!-- MQTT.js CDN for Port-443 WSS Cloud Relay Fallback -->
   <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
   
-  <link rel="stylesheet" href="styles.css">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="stylesheet" href="styles.css?v=20261023v3">
 </head>
 <body>
 
@@ -65,11 +68,14 @@
           </button>
           
           <div class="join-box">
-            <input type="text" id="join-room-input" class="text-input code-input" placeholder="ROOM" maxlength="8">
-            <button class="btn btn-secondary" onclick="handleJoinRoom()">
+            <input type="text" id="join-room-input" class="text-input code-input" placeholder="ROOM" maxlength="80">
+            <button class="btn btn-secondary" id="join-room-btn" onclick="handleJoinRoom()">
               Join
             </button>
           </div>
+        </div>
+        <div id="join-status-banner" style="display:none; margin-bottom:12px; padding:10px 14px; border-radius:8px; background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.45); color:#93c5fd; font-size:0.9rem; text-align:center;">
+          ⏳ Connecting to room over Port-443 Cloud Relay...
         </div>
 
         <!-- Active Room Panel (When created or joined) -->
@@ -247,10 +253,10 @@
   <!-- Flying Animation Layer & Particle Overlay -->
   <div id="vfx-layer" class="vfx-overlay"></div>
 
-  <!-- Application Logic Modules -->
-  <script src="engine.js"></script>
-  <script src="network.js"></script>
-  <script src="ux_effects.js"></script>
+  <!-- Application Logic Modules (cache-busted for GitHub Pages) -->
+  <script src="engine.js?v=20261023v3"></script>
+  <script src="network.js?v=20261023v3"></script>
+  <script src="ux_effects.js?v=20261023v3"></script>
 
   <script>
     // Main App Controller
@@ -301,6 +307,8 @@
     }
 
     function handleCreateRoom() {
+      const banner = document.getElementById("join-status-banner");
+      if (banner) banner.style.display = "none";
       const name = document.getElementById("player-name-input").value.trim() || "Host";
       const res = window.Crazy8Network.createRoom(name, myPlayerId);
       myPlayerId = res.playerId;
@@ -308,8 +316,16 @@
     }
 
     function handleJoinRoom(explicitCode) {
-      const code = (explicitCode || document.getElementById("join-room-input").value).trim().toUpperCase();
-      if (!code) return alert("Please enter a room code.");
+      const raw = (explicitCode || document.getElementById("join-room-input").value).trim();
+      if (!raw) return alert("Please enter a room code.");
+      const match = raw.match(/R\d{4}/i);
+      const code = (match ? match[0] : raw).toUpperCase();
+      document.getElementById("join-room-input").value = code;
+      const banner = document.getElementById("join-status-banner");
+      if (banner) {
+        banner.style.display = "block";
+        banner.innerText = `⏳ Connecting to Room ${code} over Port-443 Cloud Relay...`;
+      }
       const name = document.getElementById("player-name-input").value.trim() || "Player";
       const res = window.Crazy8Network.joinRoom(code, name, myPlayerId);
       myPlayerId = res.playerId;
@@ -353,6 +369,8 @@
     // State Render Dispatcher
     function renderState(room) {
       if (!room) return;
+      const banner = document.getElementById("join-status-banner");
+      if (banner) banner.style.display = "none";
       document.getElementById("room-badge-btn").style.display = "inline-flex";
       document.getElementById("room-code-val").innerText = room.room_id;
 
