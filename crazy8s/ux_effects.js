@@ -337,14 +337,25 @@
       onPlaySelected,
       onDrawOne
     ) {
+      this.onDrawOneCallback = onDrawOne;
       const track = document.getElementById('hand-fan-track');
       if (!track) return;
       track.innerHTML = '';
 
+      if (window.Crazy8Engine && window.Crazy8Engine.sortHand) {
+        window.Crazy8Engine.sortHand(hand);
+      }
+
       const N = hand.length;
-      const maxArcSpread = 42;
-      const angleStep = N > 1 ? Math.min(6, maxArcSpread / (N - 1)) : 0;
-      const xSpacing = N > 8 ? Math.max(34, 480 / N) : 58;
+      const viewportEl = track.parentElement || document.body;
+      const availWidth = Math.min(
+        860,
+        Math.max(280, (viewportEl.clientWidth || window.innerWidth) - 130)
+      );
+      const maxArcSpread = Math.min(26, N * 2.2);
+      const angleStep = N > 1 ? Math.min(4.2, maxArcSpread / (N - 1)) : 0;
+      const xSpacing = N > 1 ? Math.min(54, availWidth / (N - 1)) : 0;
+      const maxArchLift = Math.min(16, N * 1.4);
 
       const mePlayer =
         room && room.players
@@ -364,9 +375,11 @@
         const isRed = card.suit === 'H' || card.suit === 'D';
 
         const mid = (N - 1) / 2;
+        const norm = N > 1 ? (idx - mid) / Math.max(1, mid) : 0; // -1 at left edge, 0 at center, +1 at right edge
         const rot = (idx - mid) * angleStep;
         const xOffset = (idx - mid) * xSpacing;
-        const yOffset = Math.pow(idx - mid, 2) * 2.2;
+        // Center cards arch UPWARD (negative yOffset <= 0); outer cards sit at 0px so they NEVER drop over the action buttons!
+        const yOffset = (Math.pow(norm, 2) - 1) * maxArchLift;
 
         const wrap = document.createElement('div');
         wrap.className = `hand-card-wrapper ${isPlayable ? 'playable' : ''} ${
@@ -611,30 +624,36 @@
     }
 
     _bindDrawPileDrag(onDrawOne) {
+      if (onDrawOne) this.onDrawOneCallback = onDrawOne;
       const drawCard = document.getElementById('draw-pile-card');
       if (!drawCard || drawCard.dataset.dragBound === 'true') return;
       drawCard.dataset.dragBound = 'true';
 
+      let startX = 0;
       let startY = 0;
       let isDragging = false;
 
       drawCard.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        startX = e.clientX;
         startY = e.clientY;
         isDragging = false;
 
         const onMove = (ev) => {
           const dy = ev.clientY - startY;
-          if (dy > 30 && !isDragging) {
+          if (dy > 24 && !isDragging) {
             isDragging = true;
-            audio.play('draw');
           }
         };
 
-        const onUp = () => {
+        const onUp = (ev) => {
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
-          if (isDragging) {
-            onDrawOne();
+          const dx = (ev.clientX || startX) - startX;
+          const dy = (ev.clientY || startY) - startY;
+          const isClick = !isDragging && Math.hypot(dx, dy) <= 16;
+          if ((isDragging || isClick) && typeof this.onDrawOneCallback === 'function') {
+            this.onDrawOneCallback();
           }
         };
 
@@ -943,7 +962,8 @@
       const targetId = data.target_id || data.targetId;
       const count = data.count || 1;
       const reasonLabel = data.reason_label || data.reason || 'Verbal Rule Penalty';
-      this._animateCardDrawFlight(targetId, count, true);
+      const drawnCards = data.drawn_cards || (data.card ? [data.card] : null);
+      this._animateCardDrawFlight(targetId, count, true, drawnCards);
 
       const seat = document.getElementById(`seat-${targetId}`);
       if (seat) {
@@ -974,10 +994,18 @@
           this._animateDeal(newRoom);
           break;
         case 'DRAW':
-        case 'DRAW_UNTIL':
+        case 'DRAW_UNTIL': {
           audio.play('draw');
-          this._animateCardDrawFlight(lastAction.actor_id, lastAction.count || 1, false);
+          const drawnCards =
+            lastAction.drawn_cards || (lastAction.card ? [lastAction.card] : null);
+          this._animateCardDrawFlight(
+            lastAction.actor_id,
+            lastAction.count || 1,
+            false,
+            drawnCards
+          );
           break;
+        }
         case 'PLAY':
           audio.play('card_snap');
           this._animateCardPlayFlight(lastAction);
@@ -1069,43 +1097,128 @@
       });
     }
 
-    _animateCardDrawFlight(targetPlayerId, count = 1, isRefereePenalty = false) {
+    _animateCardDrawFlight(
+      targetPlayerId,
+      count = 1,
+      isRefereePenalty = false,
+      drawnCards = null
+    ) {
       const vfx = document.getElementById('vfx-layer');
       const drawEl = document.getElementById('draw-pile-card');
       if (!vfx || !drawEl) return;
 
-      const destEl =
-        document.getElementById(`seat-${targetPlayerId}`) ||
-        document.getElementById('hand-fan-track');
+      const oppSeat = document.getElementById(`seat-${targetPlayerId}`);
+      const handTrack = document.getElementById('hand-fan-track');
+      const isLocalDraw = !oppSeat && Boolean(handTrack);
+      const destEl = oppSeat || handTrack;
       if (!destEl) return;
 
       const sRect = drawEl.getBoundingClientRect();
       const dRect = destEl.getBoundingClientRect();
-      const num = Math.min(6, Math.max(1, count));
+      const cardsList =
+        isLocalDraw && Array.isArray(drawnCards) && drawnCards.length > 0
+          ? drawnCards.slice(0, 6)
+          : null;
+      const num = cardsList ? cardsList.length : Math.min(6, Math.max(1, count));
+
+      // If local player drew known card(s), temporarily hide them in the hand fan until they glide in
+      const hiddenWrappers = [];
+      if (cardsList && handTrack) {
+        cardsList.forEach((c) => {
+          const w = handTrack.querySelector(`.hand-card-wrapper[data-card-id="${c.id}"]`);
+          if (w) {
+            w.style.opacity = '0';
+            hiddenWrappers.push({ card: c, el: w });
+          }
+        });
+      }
 
       for (let i = 0; i < num; i++) {
+        const drawnCardObj = cardsList ? cardsList[i] : null;
+        const targetWrapper =
+          hiddenWrappers.find((hw) => hw.card && hw.card.id === (drawnCardObj && drawnCardObj.id))
+            ?.el || null;
+
         setTimeout(() => {
           const fly = document.createElement('div');
-          fly.className =
-            'table-card card-back flying-card' +
-            (isRefereePenalty ? ' referee-penalty-card' : '');
-          fly.innerHTML = `<span class="draw-pile-text">${
-            isRefereePenalty ? '📣+1' : '🂠'
-          }</span>`;
+          if (drawnCardObj) {
+            const isRed = drawnCardObj.suit === 'H' || drawnCardObj.suit === 'D';
+            const r = getRankStr(drawnCardObj.rank);
+            const s = SUIT_SYMBOLS[drawnCardObj.suit] || '♠';
+            const specialTag =
+              drawnCardObj.rank === 8
+                ? 'WILD'
+                : drawnCardObj.rank === 2
+                ? '+2'
+                : drawnCardObj.rank === 7
+                ? 'REV'
+                : drawnCardObj.rank === 12
+                ? 'SKIP'
+                : '';
+            fly.className = `table-card ${isRed ? 'red' : 'black'} flying-card drawn-reveal-card`;
+            fly.innerHTML = `
+              <div class="drawn-card-banner">${isRefereePenalty ? '📣 PENALTY' : '✨ DREW'} ${r}${s}</div>
+              <div class="card-corner top"><span>${r}</span><span>${s}</span></div>
+              <div class="card-center-pip">${s}</div>
+              ${specialTag ? `<div class="card-special-ribbon">${specialTag}</div>` : ''}
+              <div class="card-corner bottom"><span>${r}</span><span>${s}</span></div>
+            `;
+          } else {
+            fly.className =
+              'table-card card-back flying-card' +
+              (isRefereePenalty ? ' referee-penalty-card' : '');
+            fly.innerHTML = `<span class="draw-pile-text">${
+              isRefereePenalty ? '📣+1' : '🂠'
+            }</span>`;
+          }
+
           fly.style.left = `${sRect.left}px`;
           fly.style.top = `${sRect.top}px`;
-          fly.style.transform = 'scale(0.9)';
+          fly.style.transform = 'scale(0.85) rotate(-8deg)';
+          fly.style.transition = 'all 0.34s cubic-bezier(0.22, 1, 0.36, 1)';
           vfx.appendChild(fly);
 
+          // Stage 1: Reveal & Show the Drawn Card above the Stock pile
           requestAnimationFrame(() => {
-            fly.style.left = `${dRect.left + dRect.width / 2 - 38}px`;
-            fly.style.top = `${dRect.top + dRect.height / 2 - 55}px`;
-            fly.style.transform = 'scale(0.6) rotate(12deg)';
-            fly.style.opacity = '0.2';
+            const offsetSpread = (i - (num - 1) / 2) * 28;
+            fly.style.left = `${sRect.left + offsetSpread}px`;
+            fly.style.top = `${sRect.top - (isLocalDraw ? 26 : 12)}px`;
+            fly.style.transform = isLocalDraw
+              ? 'scale(1.22) rotate(0deg)'
+              : 'scale(1.04) rotate(0deg)';
           });
 
-          setTimeout(() => fly.remove(), 520);
-        }, i * 65);
+          // Stage 2: Move the Card into its exact slot in the Hand (or Opponent Seat)
+          const revealHoldMs = isLocalDraw ? 380 : 180;
+          setTimeout(() => {
+            fly.style.transition = 'all 0.38s cubic-bezier(0.22, 1, 0.36, 1)';
+            if (targetWrapper) {
+              const tRect = targetWrapper.getBoundingClientRect();
+              const targetCardEl = targetWrapper.querySelector('.table-card') || targetWrapper;
+              const cRect = targetCardEl.getBoundingClientRect();
+              fly.style.left = `${cRect.left}px`;
+              fly.style.top = `${cRect.top}px`;
+              fly.style.transform = 'scale(1) rotate(0deg)';
+            } else {
+              fly.style.left = `${dRect.left + dRect.width / 2 - 38}px`;
+              fly.style.top = `${dRect.top + dRect.height / 2 - 55}px`;
+              fly.style.transform = isLocalDraw
+                ? 'scale(0.95) rotate(0deg)'
+                : 'scale(0.6) rotate(12deg)';
+              if (!isLocalDraw) fly.style.opacity = '0.25';
+            }
+          }, revealHoldMs);
+
+          // Stage 3: Finalize and reveal the card inside the hand
+          setTimeout(() => {
+            if (targetWrapper) {
+              targetWrapper.style.opacity = '1';
+              targetWrapper.classList.add('newly-drawn-highlight');
+              setTimeout(() => targetWrapper.classList.remove('newly-drawn-highlight'), 900);
+            }
+            fly.remove();
+          }, revealHoldMs + 390);
+        }, i * 110);
       }
     }
 

@@ -14,7 +14,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="styles.css?v=20261024v5">
+  <link rel="stylesheet" href="styles.css?v=20261024v6">
 </head>
 <body>
 
@@ -259,8 +259,12 @@
 
     </div>
 
-    <!-- Live Event Ticker -->
+    <!-- Expandable Audit Log Tab / Drawer -->
     <div class="action-ticker-panel" id="action-ticker">
+      <div class="ticker-header" onclick="toggleAuditLog()">
+        <span class="ticker-title">📜 Game Audit Log (<span id="audit-count-label">0</span>)</span>
+        <button class="ticker-toggle-btn" id="audit-toggle-btn" type="button">▲ Expand Audit Log</button>
+      </div>
       <div class="ticker-content" id="ticker-lines">
         <!-- Live event messages -->
       </div>
@@ -311,9 +315,9 @@
   <div id="vfx-layer" class="vfx-overlay"></div>
 
   <!-- Application Logic Modules (cache-busted for GitHub Pages) -->
-  <script src="engine.js?v=20261024v5"></script>
-  <script src="network.js?v=20261024v5"></script>
-  <script src="ux_effects.js?v=20261024v5"></script>
+  <script src="engine.js?v=20261024v6"></script>
+  <script src="network.js?v=20261024v6"></script>
+  <script src="ux_effects.js?v=20261024v6"></script>
 
   <script>
     // Main App Controller
@@ -322,6 +326,7 @@
     let selectedCards = []; // Array of card IDs
     let isMuted = false;
     let refereePanelOpen = false;
+    let auditExpanded = false;
 
     window.addEventListener("DOMContentLoaded", () => {
       // Connect network listeners
@@ -359,6 +364,34 @@
         document.getElementById("join-room-input").value = roomCode.toUpperCase();
         handleJoinRoom(roomCode.toUpperCase());
       }
+
+      // Keyboard shortcut: Pressing Enter plays selected card(s)
+      window.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        const activeTag = document.activeElement ? document.activeElement.tagName : "";
+        if (activeTag === "INPUT" || activeTag === "SELECT" || activeTag === "TEXTAREA") return;
+        if (!currentRoom || currentRoom.status !== "PLAYING") return;
+
+        const wildModal = document.getElementById("wild-modal");
+        if (wildModal && wildModal.style.display === "flex") {
+          e.preventDefault();
+          chooseWildSuit("S");
+          return;
+        }
+
+        const myTurn = (currentRoom.players[currentRoom.current_player_index] || {}).id === myPlayerId;
+        if (myTurn && selectedCards.length > 0) {
+          e.preventDefault();
+          handlePlaySelected();
+        }
+      });
+
+      // Re-compute responsive hand fan when window resizes
+      window.addEventListener("resize", () => {
+        if (currentRoom && currentRoom.status === "PLAYING") {
+          renderActiveGame(currentRoom);
+        }
+      });
     });
 
     function toggleMute() {
@@ -880,24 +913,48 @@
     }
 
     function handleDrawOneClick() {
+      if (!currentRoom || currentRoom.status !== "PLAYING") return;
+      const myTurn = (currentRoom.players[currentRoom.current_player_index] || {}).id === myPlayerId;
+      if (!myTurn) return;
+      const me = currentRoom.players.find(p => p.id === myPlayerId) || { hand: [] };
+      const isVoluntaryDrawRestricted = currentRoom.pending_two_penalty === 0
+        && window.Crazy8Engine
+        && window.Crazy8Engine.isPlayerRestrictedFromVoluntaryDraw(currentRoom, currentRoom.current_player_index)
+        && window.Crazy8Engine.playerHasLegalPlay(currentRoom, me);
+      if (isVoluntaryDrawRestricted) return;
       window.Crazy8Network.sendAction("drawCard", {});
     }
 
     function executeDrawAction() {
-      window.Crazy8Network.sendAction("drawCard", {});
+      handleDrawOneClick();
     }
 
     function handleDrawUntilClick() {
       window.Crazy8Network.sendAction("drawUntilPlayable", {});
     }
 
+    function toggleAuditLog() {
+      auditExpanded = !auditExpanded;
+      const panel = document.getElementById("action-ticker");
+      const btn = document.getElementById("audit-toggle-btn");
+      if (panel) panel.classList.toggle("expanded", auditExpanded);
+      if (btn) btn.innerText = auditExpanded ? "▼ Collapse Audit Log" : "▲ Expand Audit Log";
+      if (currentRoom) renderLogs(currentRoom.action_log);
+    }
+
     function renderLogs(logs) {
       const container = document.getElementById("ticker-lines");
+      const countEl = document.getElementById("audit-count-label");
+      if (!container) return;
+      const allLogs = logs || [];
+      if (countEl) countEl.innerText = allLogs.length;
       container.innerHTML = "";
-      (logs || []).slice(-6).reverse().forEach(line => {
+      const visibleLogs = auditExpanded ? allLogs.slice().reverse() : allLogs.slice(-4).reverse();
+      visibleLogs.forEach((line, idx) => {
+        const eventNum = allLogs.length - idx;
         const div = document.createElement("div");
         div.className = "ticker-entry";
-        div.innerText = line;
+        div.innerText = auditExpanded ? `#${eventNum} • ${line}` : line;
         container.appendChild(div);
       });
     }

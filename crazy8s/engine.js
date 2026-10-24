@@ -25,6 +25,7 @@
   'use strict';
 
   const SUITS = ['S', 'H', 'D', 'C'];
+  const SUIT_SORT_ORDER = { S: 0, H: 1, C: 2, D: 3 };
   const SUIT_NAMES = { S: 'Spades', H: 'Hearts', D: 'Diamonds', C: 'Clubs' };
   const SUIT_SYMBOLS = { S: '♠', H: '♥', D: '♦', C: '♣' };
   const RANK_NAMES = {
@@ -42,6 +43,16 @@
     12: 'Q',
     13: 'K',
   };
+
+  function sortHand(hand) {
+    if (!Array.isArray(hand)) return hand;
+    hand.sort((a, b) => {
+      const sDiff = (SUIT_SORT_ORDER[a.suit] ?? 9) - (SUIT_SORT_ORDER[b.suit] ?? 9);
+      if (sDiff !== 0) return sDiff;
+      return a.rank - b.rank;
+    });
+    return hand;
+  }
 
   function cardLabel(card) {
     return `${RANK_NAMES[card.rank]}${SUIT_SYMBOLS[card.suit]}`;
@@ -168,6 +179,7 @@
           const drawn = drawOneFromStock(room);
           if (drawn) hand.push(drawn);
         }
+        sortHand(hand);
         room.players.push({
           id: playerId,
           name: finalName,
@@ -247,8 +259,14 @@
     return room.draw_pile.pop();
   }
 
+  function getPlayerCardCount(p) {
+    if (!p) return 0;
+    if (typeof p.card_count === 'number') return p.card_count;
+    return Array.isArray(p.hand) ? p.hand.length : 0;
+  }
+
   function updateFinalRoundFlag(room) {
-    room.final_round = room.players.some((p) => p.hand.length === 0);
+    room.final_round = room.players.some((p) => getPlayerCardCount(p) === 0);
   }
 
   function isPlayerRestrictedFromVoluntaryDraw(room, playerIndex) {
@@ -256,7 +274,7 @@
     const numPlayers = room.players.length;
     const nextIdx = (playerIndex + room.direction + numPlayers * 10) % numPlayers;
     const nextPlayer = room.players[nextIdx];
-    return Boolean(nextPlayer && nextPlayer.hand.length === 0);
+    return Boolean(nextPlayer && getPlayerCardCount(nextPlayer) === 0);
   }
 
   function canInterceptWithDrawnTwo(room, player) {
@@ -335,6 +353,7 @@
         room.players[pIdx].hand.push(deck.pop());
       }
     }
+    room.players.forEach((p) => sortHand(p.hand));
 
     // Starter card: does NOT activate special effects; if 8, natural suit is active
     const starter = deck.pop();
@@ -467,6 +486,7 @@
         const drawn = drawOneFromStock(room);
         if (drawn) {
           targetPlayer.hand.push(drawn);
+          sortHand(targetPlayer.hand);
           splashTargetIds.push(targetPlayer.id);
           drawSummaryByPlayer.set(
             targetPlayer.name,
@@ -609,6 +629,7 @@
     // -----------------------------------------------------------------
     const idSet = new Set(cardIds);
     curPlayer.hand = curPlayer.hand.filter((c) => !idSet.has(c.id));
+    sortHand(curPlayer.hand);
     room.discard_pile.push(...selected);
     room.active_suit = rank === 8 ? chosenSuit : selected[selected.length - 1].suit;
 
@@ -757,6 +778,7 @@
     }
 
     curPlayer.hand.push(drawn);
+    sortHand(curPlayer.hand);
     room.last_drawn_card_id = drawn.id;
 
     // If curPlayer had 1 card and drew, they no longer have 1 card
@@ -772,6 +794,7 @@
       actor_name: curPlayer.name,
       count: 1,
       card: drawn,
+      drawn_cards: [drawn],
       timestamp: Date.now(),
     };
 
@@ -853,6 +876,7 @@
       drawnCards.push(drawn);
       room.last_drawn_card_id = drawn.id;
     }
+    sortHand(curPlayer.hand);
 
     if (drawnCards.length > 0) {
       room.seq = (room.seq || 0) + 1;
@@ -862,6 +886,7 @@
         actor_id: playerId,
         actor_name: curPlayer.name,
         count: drawnCards.length,
+        drawn_cards: drawnCards,
         timestamp: Date.now(),
       };
       room.action_log.push(
@@ -920,6 +945,7 @@
         drawnCards.push(c);
       }
     }
+    sortHand(target.hand);
 
     updateFinalRoundFlag(room);
 
@@ -933,6 +959,7 @@
       reason: reason,
       reason_label: reasonLabel,
       count: drawnCards.length,
+      drawn_cards: drawnCards,
       turns_elapsed: turnsElapsed,
       reinstated_from_zero: wasZeroCards,
       timestamp: Date.now(),
@@ -963,6 +990,15 @@
     const clone = JSON.parse(JSON.stringify(room));
     clone.draw_pile_count = clone.draw_pile.length;
     delete clone.draw_pile;
+
+    if (
+      clone.last_action &&
+      clone.last_action.actor_id !== viewerPlayerId &&
+      clone.last_action.target_id !== viewerPlayerId
+    ) {
+      delete clone.last_action.card;
+      delete clone.last_action.drawn_cards;
+    }
 
     clone.players.forEach((p) => {
       p.card_count = p.hand.length;
@@ -1101,9 +1137,11 @@
 
   return {
     SUITS,
+    SUIT_SORT_ORDER,
     SUIT_NAMES,
     SUIT_SYMBOLS,
     RANK_NAMES,
+    sortHand,
     cardLabel,
     getCardsPerPlayer,
     isCardPlayableInTurn,
