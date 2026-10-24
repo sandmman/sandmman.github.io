@@ -463,13 +463,17 @@
         });
       }
 
-      // 4. Port-443 HTTPS Native Relay (ntfy.sh) for all control, state, and drag-end packets
+      // 4. Port-443 HTTPS Native Relay (ntfy.sh) for control, state, and key social/referee events
       if (
         this.ntfyTopic &&
         typeof fetch !== 'undefined' &&
         (msg.type === 'RPC_REQUEST' ||
           msg.type === 'SYNC_STATE' ||
-          (msg.type === 'TELEMETRY' && msg.data && msg.data.type === 'DRAG_END'))
+          (msg.type === 'TELEMETRY' &&
+            msg.data &&
+            ['DRAG_END', 'CALLOUT', 'TABLE_TAP', 'REFEREE_WHISTLE', 'EMOTE'].includes(
+              msg.data.type
+            )))
       ) {
         try {
           fetch(`https://ntfy.sh/${this.ntfyTopic}`, {
@@ -647,6 +651,13 @@
         res = E.drawUntilPlayable(room, playerId);
       } else if (action === 'chooseSuit') {
         res = E.chooseSuit(room, playerId, payload.suit);
+      } else if (action === 'applyVerbalPenalty') {
+        res = E.applyVerbalPenalty(
+          room,
+          payload.targetPlayerId,
+          payload.reason,
+          payload.cardCount
+        );
       }
 
       this._broadcastRoomState();

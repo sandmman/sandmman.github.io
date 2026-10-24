@@ -1,5 +1,5 @@
 /**
- * Crazy 8s Tabletop UX & Interactive Card Physics Engine
+ * Extra Crazy 8s Tabletop UX & Interactive Card Physics Engine
  * Exposes window.Crazy8UX and window.Crazy8Audio
  */
 
@@ -54,6 +54,9 @@
           case 'reverse':
             this._chordSweep(now, [440, 554, 659], 0.25);
             break;
+          case 'skip':
+            this._chordSweep(now, [523.25, 783.99], 0.18);
+            break;
           case 'penalty_impact':
             this._bassDrop(now);
             break;
@@ -61,13 +64,23 @@
             this._electricArp(now);
             break;
           case 'turn_chime':
-            this._toneBell(now, 587.33); // D5
+            this._toneBell(now, 587.33);
             break;
           case 'win':
             this._fanfare(now);
             break;
           case 'emote':
             this._toneSweep(now, 400, 750, 0.08, 'triangle', 0.15);
+            break;
+          case 'callout':
+            this._chordSweep(now, [523.25, 659.25], 0.14);
+            break;
+          case 'table_knock':
+            this._woodKnock(now);
+            break;
+          case 'whistle':
+          case 'referee_whistle':
+            this._refereeWhistle(now);
             break;
         }
       } catch (e) {
@@ -90,7 +103,6 @@
     }
 
     _cardSnap(t) {
-      // High click + body impulse
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'triangle';
@@ -171,12 +183,67 @@
     }
 
     _fanfare(t) {
-      // C - E - G - High C progression
       const notes = [523.25, 659.25, 783.99, 1046.5];
       notes.forEach((f, idx) => {
         const noteT = t + idx * 0.12;
         this._toneBell(noteT, f);
       });
+    }
+
+    _woodKnock(t) {
+      // Double-tap warm wooden table thud (2 knocks 90ms apart)
+      [0, 0.09].forEach((offset) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(115, t + offset);
+        osc.frequency.exponentialRampToValueAtTime(42, t + offset + 0.075);
+        gain.gain.setValueAtTime(0.45, t + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t + offset);
+        osc.stop(t + offset + 0.08);
+      });
+    }
+
+    _refereeWhistle(t) {
+      // Authentic dual-oscillator pea-whistle FM trill (~2840Hz + ~2980Hz modulated by 32Hz LFO)
+      const dur = 0.42;
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const lfo = this.ctx.createOscillator();
+      const lfoGain = this.ctx.createGain();
+      const mainGain = this.ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'triangle';
+      osc1.frequency.setValueAtTime(2820, t);
+      osc2.frequency.setValueAtTime(2990, t);
+
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(32, t);
+      lfoGain.gain.setValueAtTime(140, t);
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc1.frequency);
+      lfoGain.connect(osc2.frequency);
+
+      mainGain.gain.setValueAtTime(0.001, t);
+      mainGain.gain.linearRampToValueAtTime(0.32, t + 0.025);
+      mainGain.gain.setValueAtTime(0.32, t + dur - 0.06);
+      mainGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      osc1.connect(mainGain);
+      osc2.connect(mainGain);
+      mainGain.connect(this.ctx.destination);
+
+      osc1.start(t);
+      osc2.start(t);
+      lfo.start(t);
+      osc1.stop(t + dur);
+      osc2.stop(t + dur);
+      lfo.stop(t + dur);
     }
   }
 
@@ -193,14 +260,14 @@
     return RANK_LABELS[r] || String(r);
   }
 
-  // Persistent pseudo-random scatter angles for the discard pile
+  // Persistent pseudo-random scatter angles for buried discard pile cards
   const discardAngleCache = new Map();
 
   function getCardScatter(cardId) {
     if (!discardAngleCache.has(cardId)) {
-      const rot = (Math.random() * 24 - 12).toFixed(1); // -12deg to +12deg
-      const ox = (Math.random() * 12 - 6).toFixed(1);
-      const oy = (Math.random() * 12 - 6).toFixed(1);
+      const rot = (Math.random() * 22 - 11).toFixed(1);
+      const ox = (Math.random() * 10 - 5).toFixed(1);
+      const oy = (Math.random() * 10 - 5).toFixed(1);
       discardAngleCache.set(cardId, { rot, ox, oy });
     }
     return discardAngleCache.get(cardId);
@@ -214,6 +281,7 @@
     constructor() {
       this.dragState = null;
       this.throttleTimer = null;
+      this.hoverThrottleTimer = null;
       this.localTelemetrySeq = 0;
     }
 
@@ -238,45 +306,72 @@
       }
       const centerFelt = document.getElementById('center-felt');
       if (centerFelt) {
-        centerFelt.querySelectorAll('.remote-ghost-card').forEach((el) => el.remove());
+        centerFelt
+          .querySelectorAll('.remote-ghost-card')
+          .forEach((el) => el.remove());
       }
+    }
+
+    _sendHoverTelemetry(hoverIndex, handCount) {
+      if (!window.Crazy8Network || this.hoverThrottleTimer) return;
+      this.hoverThrottleTimer = setTimeout(() => {
+        this.hoverThrottleTimer = null;
+        window.Crazy8Network.sendTelemetry({
+          type: 'HAND_HOVER',
+          hoverIndex: hoverIndex,
+          handCount: handCount,
+        });
+      }, 60);
     }
 
     // -------------------------------------------------------------
     // INTERACTIVE PLAYER HAND (Curved Fan & Drag-and-Drop)
     // -------------------------------------------------------------
 
-    renderInteractiveHand(hand, selectedCards, room, isMyTurn, onSelectCard, onPlaySelected, onDrawOne) {
+    renderInteractiveHand(
+      hand,
+      selectedCards,
+      room,
+      isMyTurn,
+      onSelectCard,
+      onPlaySelected,
+      onDrawOne
+    ) {
       const track = document.getElementById('hand-fan-track');
       if (!track) return;
       track.innerHTML = '';
 
-      const topCard = room.discard_pile[room.discard_pile.length - 1];
-      const activeSuit = room.active_suit;
       const N = hand.length;
-      const maxArcSpread = 42; // Max degrees fan
+      const maxArcSpread = 42;
       const angleStep = N > 1 ? Math.min(6, maxArcSpread / (N - 1)) : 0;
       const xSpacing = N > 8 ? Math.max(34, 480 / N) : 58;
+
+      const mePlayer =
+        room && room.players
+          ? room.players.find((p) => Array.isArray(p.hand) && p.hand.length > 0) ||
+            { hand: hand }
+          : { hand: hand };
 
       hand.forEach((card, idx) => {
         const isPlayable =
           isMyTurn &&
-          (room.phase === 'DRAWING_PENALTY'
-            ? card.rank === 2
-            : card.rank === 8 || card.rank === topCard.rank || card.suit === activeSuit);
+          (window.Crazy8Engine && window.Crazy8Engine.isCardPlayableInTurn
+            ? window.Crazy8Engine.isCardPlayableInTurn(room, mePlayer, card)
+            : true);
 
         const selIdx = selectedCards.indexOf(card.id);
         const isSel = selIdx !== -1;
         const isRed = card.suit === 'H' || card.suit === 'D';
 
-        // Fan geometry: rotation + parabolic arc offset
         const mid = (N - 1) / 2;
         const rot = (idx - mid) * angleStep;
         const xOffset = (idx - mid) * xSpacing;
-        const yOffset = Math.pow(idx - mid, 2) * 2.2; // Parabola dip
+        const yOffset = Math.pow(idx - mid, 2) * 2.2;
 
         const wrap = document.createElement('div');
-        wrap.className = `hand-card-wrapper ${isPlayable ? 'playable' : ''} ${isSel ? 'selected' : ''}`;
+        wrap.className = `hand-card-wrapper ${isPlayable ? 'playable' : ''} ${
+          isSel ? 'selected' : ''
+        }`;
         wrap.dataset.cardId = card.id;
         wrap.style.setProperty('--base-x', `${xOffset}px`);
         wrap.style.setProperty('--base-y', `${yOffset}px`);
@@ -285,17 +380,37 @@
 
         const r = getRankStr(card.rank);
         const s = SUIT_SYMBOLS[card.suit];
+        const specialTag =
+          card.rank === 8
+            ? 'WILD'
+            : card.rank === 2
+            ? '+2'
+            : card.rank === 7
+            ? 'REV'
+            : card.rank === 12
+            ? 'SKIP'
+            : '';
+
         wrap.innerHTML = `
           ${isSel ? `<div class="selection-order-badge">#${selIdx + 1}</div>` : ''}
           <div class="table-card ${isRed ? 'red' : 'black'}">
             <div class="card-corner top"><span>${r}</span><span>${s}</span></div>
             <div class="card-center-pip">${s}</div>
+            ${specialTag ? `<div class="card-special-ribbon">${specialTag}</div>` : ''}
             <div class="card-corner bottom"><span>${r}</span><span>${s}</span></div>
           </div>
         `;
 
+        // Hover telemetry ("card fingering") so opponents see which card in your fan you're hovering
+        wrap.addEventListener('pointerenter', () => {
+          this._sendHoverTelemetry(idx, N);
+        });
+        wrap.addEventListener('pointerleave', () => {
+          this._sendHoverTelemetry(-1, N);
+        });
+
         // Click to toggle selection
-        wrap.addEventListener('click', (e) => {
+        wrap.addEventListener('click', () => {
           if (wrap.dataset.wasDragged === 'true') {
             wrap.dataset.wasDragged = 'false';
             return;
@@ -309,7 +424,6 @@
         track.appendChild(wrap);
       });
 
-      // Bind Draw-to-Drag on Draw Pile
       this._bindDrawPileDrag(onDrawOne);
     }
 
@@ -384,7 +498,6 @@
           currentX = e.clientX;
           currentY = e.clientY;
 
-          // Exponential low-pass filter for smooth 3D tilt
           const targetTiltX = Math.max(-14, Math.min(14, -velY * 10));
           const targetTiltY = Math.max(-14, Math.min(14, velX * 10));
           smoothTiltX = smoothTiltX * 0.78 + targetTiltX * 0.22;
@@ -396,11 +509,12 @@
               if (!isDragging) return;
               const curDx = currentX - startX;
               const curDy = currentY - startY;
-              cardEl.style.transform = `translate3d(calc(var(--base-x, 0px) + ${curDx}px), calc(var(--base-y, 0px) + ${curDy}px), 0) rotateX(${smoothTiltX.toFixed(1)}deg) rotateY(${smoothTiltY.toFixed(1)}deg) scale(1.08)`;
+              cardEl.style.transform = `translate3d(calc(var(--base-x, 0px) + ${curDx}px), calc(var(--base-y, 0px) + ${curDy}px), 0) rotateX(${smoothTiltX.toFixed(
+                1
+              )}deg) rotateY(${smoothTiltY.toFixed(1)}deg) scale(1.08)`;
             });
           }
 
-          // Check if hovering over Discard Pile drop zone
           if (dropZone && reticle) {
             const rect = dropZone.getBoundingClientRect();
             const inZone =
@@ -416,7 +530,6 @@
             }
           }
 
-          // Throttle broadcast hand-to-discard progress telemetry to peers (~30fps)
           if (dropZone && window.Crazy8Network && !this.throttleTimer) {
             this.throttleTimer = setTimeout(() => {
               this.throttleTimer = null;
@@ -424,8 +537,14 @@
               const dRect = dropZone.getBoundingClientRect();
               const dropCenterY = dRect.top + dRect.height / 2;
               const distY = Math.max(100, startY - dropCenterY);
-              const v = Math.max(-0.15, Math.min(1.15, (startY - currentY) / distY));
-              const u = Math.max(-1.2, Math.min(1.2, (currentX - startX) / distY));
+              const v = Math.max(
+                -0.15,
+                Math.min(1.15, (startY - currentY) / distY)
+              );
+              const u = Math.max(
+                -1.2,
+                Math.min(1.2, (currentX - startX) / distY)
+              );
 
               this.localTelemetrySeq += 1;
               window.Crazy8Network.sendTelemetry({
@@ -454,7 +573,6 @@
         if (wasDragging) {
           cardEl.classList.remove('dragging');
 
-          // Always send final DRAG_END with a strictly higher sequence number
           if (window.Crazy8Network) {
             this.localTelemetrySeq += 1;
             window.Crazy8Network.sendTelemetry({
@@ -464,7 +582,6 @@
             });
           }
 
-          // Check drop zone collision
           if (dropZone) {
             const rect = dropZone.getBoundingClientRect();
             const endX = e.clientX !== undefined ? e.clientX : currentX;
@@ -477,16 +594,15 @@
 
             if (droppedInZone && isPlayable) {
               audio.play('card_snap');
-              const toPlay = selectedCards.includes(card.id) ? selectedCards : [card.id];
-              // Reset inline transform before invoking play so card never hangs in mid-air
-              // (e.g. while Wild 8 suit picker is open or waiting for network sync)
+              const toPlay = selectedCards.includes(card.id)
+                ? selectedCards
+                : [card.id];
               cardEl.style.transform = '';
               onPlaySelected(toPlay, null);
               return;
             }
           }
 
-          // Smoothly spring back to fan slot
           cardEl.style.transform = '';
         }
       };
@@ -514,7 +630,7 @@
           }
         };
 
-        const onUp = (ev) => {
+        const onUp = () => {
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
           if (isDragging) {
@@ -528,25 +644,99 @@
     }
 
     // -------------------------------------------------------------
-    // MESSY PHYSICAL DISCARD STACK
+    // 3D DRAW PILE DEPTH & MULTI-CARD COMBO FAN ON DISCARD PILE
     // -------------------------------------------------------------
 
-    renderDiscardStack(discardPile) {
+    renderDrawPileDepth(count) {
+      const drawCard = document.getElementById('draw-pile-card');
+      if (!drawCard) return;
+      const layers = Math.min(6, Math.max(1, Math.ceil((count || 0) / 8)));
+      const shadows = [];
+      for (let i = 1; i <= layers; i++) {
+        shadows.push(
+          `${i * 1.5}px ${i * 1.8}px 0px ${i % 2 === 0 ? '#1e3a8a' : '#93c5fd'}`
+        );
+      }
+      shadows.push(`0 ${4 + layers * 2}px ${12 + layers * 2}px rgba(0,0,0,0.55)`);
+      drawCard.style.boxShadow = shadows.join(', ');
+    }
+
+    renderDiscardStack(discardPile, lastAction = null, rankStreak = null) {
       const container = document.getElementById('discard-stack');
       if (!container || !discardPile || discardPile.length === 0) return;
       container.innerHTML = '';
 
-      // Render top 4 cards with organic scatter
-      const slice = discardPile.slice(-4);
-      slice.forEach((c, idx) => {
+      const comboCards =
+        lastAction &&
+        ['PLAY', 'WILD', 'REVERSE', 'SKIP', 'STACK_TWO', 'INTERCEPT_TWO', 'WIN'].includes(
+          lastAction.type
+        ) &&
+        Array.isArray(lastAction.cards) &&
+        lastAction.cards.length > 1
+          ? lastAction.cards
+          : null;
+      const comboCount = comboCards
+        ? Math.min(comboCards.length, discardPile.length)
+        : 1;
+
+      const badge = document.getElementById('combo-fan-badge');
+      if (badge) {
+        const streakLen = Array.isArray(rankStreak) ? rankStreak.length : 0;
+        const topRankStr = getRankStr(discardPile[discardPile.length - 1].rank);
+        if (comboCount > 1) {
+          badge.innerText = `🔥 ${comboCount}x ${topRankStr} COMBO!`;
+          badge.style.display = 'block';
+        } else if (streakLen >= 2) {
+          badge.innerText = `⚡ Streak: ${streakLen}/4 (${topRankStr}s)`;
+          badge.style.display = 'block';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+
+      // Render up to 3 buried history cards underneath the active top card / combo
+      const historyEnd = Math.max(0, discardPile.length - comboCount);
+      const historySlice = discardPile.slice(
+        Math.max(0, historyEnd - 3),
+        historyEnd
+      );
+      historySlice.forEach((c, idx) => {
         const scatter = getCardScatter(c.id);
         const isRed = c.suit === 'H' || c.suit === 'D';
-        const isTop = idx === slice.length - 1;
-
         const el = document.createElement('div');
         el.className = `table-card ${isRed ? 'red' : 'black'}`;
         el.style.transform = `translate(${scatter.ox}px, ${scatter.oy}px) rotate(${scatter.rot}deg)`;
-        el.style.zIndex = 5 + idx;
+        el.style.filter = 'brightness(0.84)';
+        el.style.zIndex = 2 + idx;
+
+        const r = getRankStr(c.rank);
+        const s = SUIT_SYMBOLS[c.suit];
+        el.innerHTML = `
+          <div class="card-corner top"><span>${r}</span><span>${s}</span></div>
+          <div class="card-center-pip">${s}</div>
+          <div class="card-corner bottom"><span>${r}</span><span>${s}</span></div>
+        `;
+        container.appendChild(el);
+      });
+
+      // Render top card or fanned multi-card combo
+      const activeComboSlice = discardPile.slice(-comboCount);
+      const mid = (activeComboSlice.length - 1) / 2;
+      activeComboSlice.forEach((c, j) => {
+        const isRed = c.suit === 'H' || c.suit === 'D';
+        const el = document.createElement('div');
+        el.className = `table-card ${isRed ? 'red' : 'black'}`;
+
+        if (comboCount > 1) {
+          const ox = (j - mid) * 20;
+          const oy = Math.abs(j - mid) * 4;
+          const rot = (j - mid) * 10;
+          el.style.transform = `translate(${ox}px, ${oy}px) rotate(${rot}deg)`;
+        } else {
+          const scatter = getCardScatter(c.id);
+          el.style.transform = `translate(${scatter.ox}px, ${scatter.oy}px) rotate(${scatter.rot}deg)`;
+        }
+        el.style.zIndex = 10 + j;
 
         const r = getRankStr(c.rank);
         const s = SUIT_SYMBOLS[c.suit];
@@ -560,7 +750,7 @@
     }
 
     // -------------------------------------------------------------
-    // WATCH OTHER PLAYERS DRAG CARDS (Remote Ghost Cards)
+    // WATCH OTHER PLAYERS DRAG & HOVER CARDS (Remote Telemetry)
     // -------------------------------------------------------------
 
     renderRemoteTelemetry(telemetry, room) {
@@ -572,7 +762,45 @@
       const ghostId = data.botId || senderId;
 
       if (data.type === 'EMOTE') {
-        this.showSeatEmote(data.playerId, data.emoji, room);
+        this.showSeatEmote(data.playerId || senderId, data.emoji, room);
+        return;
+      }
+
+      if (data.type === 'CALLOUT') {
+        this.showSeatCallout(
+          data.playerId || senderId,
+          data.text,
+          data.style,
+          room
+        );
+        return;
+      }
+
+      if (data.type === 'TABLE_TAP') {
+        this.playTableTap(data.playerId || senderId, data.nx, data.ny, room);
+        return;
+      }
+
+      if (data.type === 'REFEREE_WHISTLE') {
+        this.playRefereeWhistleEffect(data);
+        return;
+      }
+
+      if (data.type === 'HAND_HOVER') {
+        const seat = document.getElementById(`seat-${senderId}`);
+        if (seat) {
+          const minis = seat.querySelectorAll('.mini-card-back');
+          minis.forEach((m) => m.classList.remove('hovered-by-owner'));
+          if (data.hoverIndex >= 0 && minis.length > 0) {
+            const mapped = Math.min(
+              minis.length - 1,
+              Math.floor(
+                (data.hoverIndex / Math.max(1, data.handCount)) * minis.length
+              )
+            );
+            if (minis[mapped]) minis[mapped].classList.add('hovered-by-owner');
+          }
+        }
         return;
       }
 
@@ -594,11 +822,9 @@
       if (data.type === 'DRAG_MOVE' || data.type === 'BOT_DRAG') {
         let entry = remoteGhosts.get(ghostId);
 
-        // Find the opponent's seat in the DOM (top of the table)
         const seatEl = document.getElementById(`seat-${ghostId}`);
         const miniFan = seatEl ? seatEl.querySelector('.mini-card-fan') : null;
 
-        // Lift one card visually from their hand while dragging
         if (miniFan) {
           const cards = miniFan.querySelectorAll('.mini-card-back');
           if (cards.length > 0 && !miniFan.querySelector('.ghost-lifted')) {
@@ -610,11 +836,9 @@
         const dropZone = document.getElementById('discard-drop-zone');
         const dRect = dropZone ? dropZone.getBoundingClientRect() : fRect;
 
-        // Target is the discard pile center relative to centerFelt
         const targetX = dRect.left + dRect.width / 2 - fRect.left;
         const targetY = dRect.top + dRect.height / 2 - fRect.top;
 
-        // Origin is the opponent's seat/mini-card-fan relative to centerFelt
         let seatX = fRect.width * 0.5;
         let seatY = -20;
         if (miniFan) {
@@ -635,19 +859,19 @@
             <div class="remote-ghost-badge">${name}</div>
             <span class="draw-pile-text">🂠</span>
           `;
-          ghostEl.style.transform = `translate3d(${seatX - 38}px, ${seatY - 55}px, 0) scale(0.85)`;
+          ghostEl.style.transform = `translate3d(${seatX - 38}px, ${
+            seatY - 55
+          }px, 0) scale(0.85)`;
           centerFelt.appendChild(ghostEl);
           entry = { el: ghostEl, watchdogTimer: null };
           remoteGhosts.set(ghostId, entry);
         }
 
-        // Reset 900ms inactivity watchdog so a ghost card can NEVER stay stuck on the pile
         if (entry.watchdogTimer) clearTimeout(entry.watchdogTimer);
         entry.watchdogTimer = setTimeout(() => {
           this.clearRemoteGhost(ghostId);
         }, 900);
 
-        // v: 0 at opponent seat -> 1 at discard pile
         const v =
           typeof data.v === 'number'
             ? data.v
@@ -656,19 +880,26 @@
             : 0.5;
         const u = typeof data.u === 'number' ? data.u : 0;
 
-        // Interpolate along seat-to-discard vector, factoring lateral offset u
         const px = seatX + (targetX - seatX) * v - u * 120;
         const py = seatY + (targetY - seatY) * v;
         const tiltX = data.tiltX || 0;
         const tiltY = data.tiltY || 0;
         const scale = 0.88 + Math.min(1, Math.max(0, v)) * 0.16;
 
-        entry.el.style.transform = `translate3d(${px - 38}px, ${py - 55}px, 0) rotateX(${tiltX.toFixed(1)}deg) rotateY(${tiltY.toFixed(1)}deg) rotateZ(${((1 - v) * 8).toFixed(1)}deg) scale(${scale.toFixed(2)})`;
+        entry.el.style.transform = `translate3d(${px - 38}px, ${
+          py - 55
+        }px, 0) rotateX(${tiltX.toFixed(1)}deg) rotateY(${tiltY.toFixed(
+          1
+        )}deg) rotateZ(${((1 - v) * 8).toFixed(1)}deg) scale(${scale.toFixed(
+          2
+        )})`;
       }
     }
 
-    showSeatEmote(playerId, emoji, room) {
-      const bubble = document.getElementById(`emote-seat-${playerId}`);
+    showSeatEmote(playerId, emoji) {
+      const bubble =
+        document.getElementById(`emote-seat-${playerId}`) ||
+        document.getElementById('emote-seat-local');
       if (bubble) {
         bubble.innerText = emoji;
         bubble.style.display = 'flex';
@@ -679,12 +910,63 @@
       }
     }
 
+    showSeatCallout(playerId, text) {
+      const bubble =
+        document.getElementById(`callout-seat-${playerId}`) ||
+        document.getElementById('callout-seat-local');
+      if (bubble) {
+        bubble.innerText = text;
+        bubble.style.display = 'block';
+        audio.play('callout');
+        setTimeout(() => {
+          bubble.style.display = 'none';
+        }, 2200);
+      }
+    }
+
+    playTableTap(playerId, nx = 0.5, ny = 0.5) {
+      audio.play('table_knock');
+      const felt = document.getElementById('center-felt');
+      if (!felt) return;
+      const ripple = document.createElement('div');
+      ripple.className = 'table-tap-ripple';
+      ripple.style.left = `${(nx * 100).toFixed(1)}%`;
+      ripple.style.top = `${(ny * 100).toFixed(1)}%`;
+      felt.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 800);
+    }
+
+    playRefereeWhistleEffect(data) {
+      audio.play('whistle');
+      setTimeout(() => audio.play('penalty_impact'), 160);
+      this._screenShake();
+      const targetId = data.target_id || data.targetId;
+      const count = data.count || 1;
+      const reasonLabel = data.reason_label || data.reason || 'Verbal Rule Penalty';
+      this._animateCardDrawFlight(targetId, count, true);
+
+      const seat = document.getElementById(`seat-${targetId}`);
+      if (seat) {
+        const rect = seat.getBoundingClientRect();
+        const popup = document.createElement('div');
+        popup.className = 'splash-damage-popup';
+        popup.innerText = `📣 +${count} (${reasonLabel})!`;
+        popup.style.left = `${rect.left + 10}px`;
+        popup.style.top = `${rect.top - 12}px`;
+        document.body.appendChild(popup);
+        setTimeout(() => popup.remove(), 1600);
+      }
+    }
+
     // -------------------------------------------------------------
     // FLYING CARD & SPECIAL RULE VISUAL EFFECTS
     // -------------------------------------------------------------
 
     playActionEffects(lastAction, prevRoom, newRoom) {
       if (!lastAction) return;
+      if (prevRoom && prevRoom.last_action && prevRoom.last_action.seq === lastAction.seq) {
+        return;
+      }
 
       switch (lastAction.type) {
         case 'DEAL':
@@ -694,25 +976,38 @@
         case 'DRAW':
         case 'DRAW_UNTIL':
           audio.play('draw');
+          this._animateCardDrawFlight(lastAction.actor_id, lastAction.count || 1, false);
           break;
         case 'PLAY':
           audio.play('card_snap');
+          this._animateCardPlayFlight(lastAction);
+          break;
+        case 'SKIP':
+          audio.play('skip');
+          this._animateCardPlayFlight(lastAction);
           break;
         case 'REVERSE':
           audio.play('reverse');
+          this._animateCardPlayFlight(lastAction);
           this._animateReverse();
           break;
         case 'STACK_TWO':
           audio.play('penalty_impact');
+          this._animateCardPlayFlight(lastAction);
           this._screenShake();
           break;
         case 'INTERCEPT_TWO':
           audio.play('intercept');
+          this._animateCardPlayFlight(lastAction);
           this._screenShake();
           break;
         case 'WILD':
           audio.play('card_snap');
+          this._animateCardPlayFlight(lastAction);
           this._animateWildPrism(lastAction.chosen_suit);
+          break;
+        case 'VERBAL_PENALTY':
+          this.playRefereeWhistleEffect(lastAction);
           break;
         case 'WIN':
           audio.play('win');
@@ -720,34 +1015,126 @@
           break;
       }
 
-      if (lastAction.splash_target_ids && lastAction.splash_target_ids.length > 0) {
+      if (
+        lastAction.splash_target_ids &&
+        lastAction.splash_target_ids.length > 0
+      ) {
         this._animateSplashDamage(lastAction.splash_target_ids);
       }
     }
 
-    _animateDeal(room) {
+    _animateCardPlayFlight(lastAction) {
       const vfx = document.getElementById('vfx-layer');
-      if (!vfx) return;
+      const discardEl = document.getElementById('discard-stack');
+      if (!vfx || !discardEl || !lastAction) return;
 
-      const dealerSeat = document.querySelector('.opponent-seat.active-turn') || vfx;
-      const dRect = dealerSeat.getBoundingClientRect();
+      const seatEl = document.getElementById(`seat-${lastAction.actor_id}`);
+      if (!seatEl) return; // Local player already dragged or clicked directly
+
+      const sRect = seatEl.getBoundingClientRect();
+      const dRect = discardEl.getBoundingClientRect();
+      const cards =
+        Array.isArray(lastAction.cards) && lastAction.cards.length > 0
+          ? lastAction.cards
+          : [];
+
+      cards.forEach((c, idx) => {
+        setTimeout(() => {
+          const isRed = c.suit === 'H' || c.suit === 'D';
+          const r = getRankStr(c.rank);
+          const s = SUIT_SYMBOLS[c.suit] || '♠';
+          const fly = document.createElement('div');
+          fly.className = `table-card ${isRed ? 'red' : 'black'} flying-card`;
+          fly.innerHTML = `
+            <div class="card-corner top"><span>${r}</span><span>${s}</span></div>
+            <div class="card-center-pip">${s}</div>
+            <div class="card-corner bottom"><span>${r}</span><span>${s}</span></div>
+          `;
+          fly.style.left = `${sRect.left + sRect.width / 2 - 38}px`;
+          fly.style.top = `${sRect.top + sRect.height / 2 - 55}px`;
+          fly.style.transform = 'scale(0.65) rotate(-14deg)';
+          vfx.appendChild(fly);
+
+          requestAnimationFrame(() => {
+            const fanOffset = (idx - (cards.length - 1) / 2) * 18;
+            fly.style.left = `${dRect.left + fanOffset}px`;
+            fly.style.top = `${dRect.top}px`;
+            fly.style.transform = `scale(1) rotate(${
+              (idx - (cards.length - 1) / 2) * 10
+            }deg)`;
+          });
+
+          setTimeout(() => fly.remove(), 480);
+        }, idx * 55);
+      });
+    }
+
+    _animateCardDrawFlight(targetPlayerId, count = 1, isRefereePenalty = false) {
+      const vfx = document.getElementById('vfx-layer');
+      const drawEl = document.getElementById('draw-pile-card');
+      if (!vfx || !drawEl) return;
+
+      const destEl =
+        document.getElementById(`seat-${targetPlayerId}`) ||
+        document.getElementById('hand-fan-track');
+      if (!destEl) return;
+
+      const sRect = drawEl.getBoundingClientRect();
+      const dRect = destEl.getBoundingClientRect();
+      const num = Math.min(6, Math.max(1, count));
+
+      for (let i = 0; i < num; i++) {
+        setTimeout(() => {
+          const fly = document.createElement('div');
+          fly.className =
+            'table-card card-back flying-card' +
+            (isRefereePenalty ? ' referee-penalty-card' : '');
+          fly.innerHTML = `<span class="draw-pile-text">${
+            isRefereePenalty ? '📣+1' : '🂠'
+          }</span>`;
+          fly.style.left = `${sRect.left}px`;
+          fly.style.top = `${sRect.top}px`;
+          fly.style.transform = 'scale(0.9)';
+          vfx.appendChild(fly);
+
+          requestAnimationFrame(() => {
+            fly.style.left = `${dRect.left + dRect.width / 2 - 38}px`;
+            fly.style.top = `${dRect.top + dRect.height / 2 - 55}px`;
+            fly.style.transform = 'scale(0.6) rotate(12deg)';
+            fly.style.opacity = '0.2';
+          });
+
+          setTimeout(() => fly.remove(), 520);
+        }, i * 65);
+      }
+    }
+
+    _animateDeal() {
+      const vfx = document.getElementById('vfx-layer');
+      const drawEl = document.getElementById('draw-pile-card');
+      if (!vfx || !drawEl) return;
+
+      const dRect = drawEl.getBoundingClientRect();
+      if (dRect.width === 0 && dRect.height === 0) return;
 
       for (let i = 0; i < 6; i++) {
         setTimeout(() => {
           const card = document.createElement('div');
           card.className = 'table-card card-back flying-card';
-          card.style.left = `${dRect.left + 20}px`;
-          card.style.top = `${dRect.top + 20}px`;
+          card.style.left = `${dRect.left}px`;
+          card.style.top = `${dRect.top}px`;
+          card.style.transform = 'scale(0.85)';
           vfx.appendChild(card);
 
-          setTimeout(() => {
-            card.style.left = '50%';
-            card.style.top = '75%';
+          requestAnimationFrame(() => {
+            card.style.left = `${dRect.left + (i - 2.5) * 35}px`;
+            card.style.top = `${dRect.top + 140}px`;
             card.style.opacity = '0';
-          }, 30);
+            card.style.transform = 'scale(0.6) rotate(10deg)';
+          });
 
-          setTimeout(() => card.remove(), 600);
-        }, i * 70);
+          setTimeout(() => card.remove(), 520);
+        }, i * 60);
       }
     }
 
@@ -764,14 +1151,12 @@
       const table = document.getElementById('game-table');
       if (!table) return;
       table.style.animation = 'none';
-      table.offsetHeight; // reflow
+      table.offsetHeight;
       table.style.animation = 'shake-table 0.4s ease-in-out';
       setTimeout(() => (table.style.animation = ''), 400);
     }
 
-    _animateWildPrism(suit) {
-      const felt = document.getElementById('center-felt');
-      if (!felt) return;
+    _animateWildPrism() {
       const glow = document.getElementById('active-suit-box');
       if (glow) {
         glow.style.transform = 'scale(1.25)';
@@ -781,16 +1166,17 @@
 
     _animateSplashDamage(targetIds) {
       targetIds.forEach((id) => {
+        this._animateCardDrawFlight(id, 1, false);
         const seat = document.getElementById(`seat-${id}`);
         if (!seat) return;
         const rect = seat.getBoundingClientRect();
         const popup = document.createElement('div');
         popup.className = 'splash-damage-popup';
-        popup.innerText = '+1 SPLASH!';
-        popup.style.left = `${rect.left + 20}px`;
+        popup.innerText = '⚡ +1 STREAK PENALTY!';
+        popup.style.left = `${rect.left + 10}px`;
         popup.style.top = `${rect.top - 10}px`;
         document.body.appendChild(popup);
-        setTimeout(() => popup.remove(), 1200);
+        setTimeout(() => popup.remove(), 1300);
       });
     }
 
@@ -804,7 +1190,9 @@
         conf.style.top = '-20px';
         conf.style.width = '10px';
         conf.style.height = '14px';
-        conf.style.background = ['#f59e0b', '#ef4444', '#10b981', '#3b82f6'][Math.floor(Math.random() * 4)];
+        conf.style.background = ['#f59e0b', '#ef4444', '#10b981', '#3b82f6'][
+          Math.floor(Math.random() * 4)
+        ];
         conf.style.transform = `rotate(${Math.random() * 360}deg)`;
         conf.style.transition = `all ${1.5 + Math.random()}s ease-out`;
         conf.style.zIndex = '2500';
