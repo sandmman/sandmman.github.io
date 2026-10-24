@@ -590,7 +590,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 32px;
+  gap: 54px;
   position: relative;
   z-index: 5;
 }

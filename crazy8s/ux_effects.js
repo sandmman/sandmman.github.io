@@ -685,36 +685,42 @@
       if (!container || !discardPile || discardPile.length === 0) return;
       container.innerHTML = '';
 
-      const comboCards =
-        lastAction &&
-        ['PLAY', 'WILD', 'REVERSE', 'SKIP', 'STACK_TWO', 'INTERCEPT_TWO', 'WIN'].includes(
-          lastAction.type
-        ) &&
-        Array.isArray(lastAction.cards) &&
-        lastAction.cards.length > 1
-          ? lastAction.cards
-          : null;
-      const comboCount = comboCards
-        ? Math.min(comboCards.length, discardPile.length)
-        : 1;
+      const topCard = discardPile[discardPile.length - 1];
+      let trailingSameRank = 1;
+      for (let i = discardPile.length - 2; i >= 0; i--) {
+        if (discardPile[i].rank === topCard.rank) {
+          trailingSameRank += 1;
+        } else {
+          break;
+        }
+      }
+
+      const streakLen =
+        Array.isArray(rankStreak) && rankStreak.length > 0
+          ? rankStreak.length
+          : trailingSameRank;
+      const activeStackCount = Math.min(
+        discardPile.length,
+        Math.max(1, streakLen)
+      );
 
       const badge = document.getElementById('combo-fan-badge');
       if (badge) {
-        const streakLen = Array.isArray(rankStreak) ? rankStreak.length : 0;
-        const topRankStr = getRankStr(discardPile[discardPile.length - 1].rank);
-        if (comboCount > 1) {
-          badge.innerText = `🔥 ${comboCount}x ${topRankStr} COMBO!`;
-          badge.style.display = 'block';
-        } else if (streakLen >= 2) {
-          badge.innerText = `⚡ Streak: ${streakLen}/4 (${topRankStr}s)`;
+        const topRankStr = getRankStr(topCard.rank);
+        const stackSuits = discardPile
+          .slice(-activeStackCount)
+          .map((c) => `${getRankStr(c.rank)}${SUIT_SYMBOLS[c.suit]}`)
+          .join(' • ');
+        if (activeStackCount >= 2) {
+          badge.innerText = `⚡ Active ${topRankStr} Stack (${activeStackCount}/4): ${stackSuits}`;
           badge.style.display = 'block';
         } else {
           badge.style.display = 'none';
         }
       }
 
-      // Render up to 3 buried history cards underneath the active top card / combo
-      const historyEnd = Math.max(0, discardPile.length - comboCount);
+      // Render up to 3 buried history cards underneath the active rank stack
+      const historyEnd = Math.max(0, discardPile.length - activeStackCount);
       const historySlice = discardPile.slice(
         Math.max(0, historyEnd - 3),
         historyEnd
@@ -725,7 +731,7 @@
         const el = document.createElement('div');
         el.className = `table-card ${isRed ? 'red' : 'black'}`;
         el.style.transform = `translate(${scatter.ox}px, ${scatter.oy}px) rotate(${scatter.rot}deg)`;
-        el.style.filter = 'brightness(0.84)';
+        el.style.filter = 'brightness(0.76)';
         el.style.zIndex = 2 + idx;
 
         const r = getRankStr(c.rank);
@@ -738,18 +744,18 @@
         container.appendChild(el);
       });
 
-      // Render top card or fanned multi-card combo
-      const activeComboSlice = discardPile.slice(-comboCount);
-      const mid = (activeComboSlice.length - 1) / 2;
-      activeComboSlice.forEach((c, j) => {
+      // Render all cards in the currently active rank stack fanned out left-to-right
+      const activeStackSlice = discardPile.slice(-activeStackCount);
+      const mid = (activeStackSlice.length - 1) / 2;
+      activeStackSlice.forEach((c, j) => {
         const isRed = c.suit === 'H' || c.suit === 'D';
         const el = document.createElement('div');
-        el.className = `table-card ${isRed ? 'red' : 'black'}`;
+        el.className = `table-card ${isRed ? 'red' : 'black'} active-stack-card`;
 
-        if (comboCount > 1) {
-          const ox = (j - mid) * 20;
-          const oy = Math.abs(j - mid) * 4;
-          const rot = (j - mid) * 10;
+        if (activeStackCount > 1) {
+          const ox = (j - mid) * 24;
+          const oy = Math.abs(j - mid) * 3 - 2;
+          const rot = (j - mid) * 8;
           el.style.transform = `translate(${ox}px, ${oy}px) rotate(${rot}deg)`;
         } else {
           const scatter = getCardScatter(c.id);
