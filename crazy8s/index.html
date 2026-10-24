@@ -14,7 +14,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="styles.css?v=20261024v7">
+  <link rel="stylesheet" href="styles.css?v=20261024v8">
 </head>
 <body>
 
@@ -259,16 +259,19 @@
 
     </div>
 
-    <!-- Expandable Audit Log Tab / Drawer -->
-    <div class="action-ticker-panel" id="action-ticker">
+    <!-- Side-Docked Expandable Audit Log Tab (Hidden on Home/Lobby Page; Docked Beside Table During Game) -->
+    <aside class="action-ticker-panel" id="action-ticker" style="display:none;">
+      <div class="ticker-collapsed-tab" onclick="toggleAuditLog()" title="Click to expand Game Audit Log">
+        📜 Audit (<span id="audit-count-tab">0</span>)
+      </div>
       <div class="ticker-header" onclick="toggleAuditLog()">
-        <span class="ticker-title">📜 Game Audit Log (<span id="audit-count-label">0</span>)</span>
-        <button class="ticker-toggle-btn" id="audit-toggle-btn" type="button">▲ Expand Audit Log</button>
+        <span class="ticker-title">📜 Audit Log (<span id="audit-count-label">0</span>)</span>
+        <button class="ticker-toggle-btn" id="audit-toggle-btn" type="button">✕ Close</button>
       </div>
       <div class="ticker-content" id="ticker-lines">
         <!-- Live event messages -->
       </div>
-    </div>
+    </aside>
 
   </main>
 
@@ -315,9 +318,9 @@
   <div id="vfx-layer" class="vfx-overlay"></div>
 
   <!-- Application Logic Modules (cache-busted for GitHub Pages) -->
-  <script src="engine.js?v=20261024v7"></script>
-  <script src="network.js?v=20261024v7"></script>
-  <script src="ux_effects.js?v=20261024v7"></script>
+  <script src="engine.js?v=20261024v8"></script>
+  <script src="network.js?v=20261024v8"></script>
+  <script src="ux_effects.js?v=20261024v8"></script>
 
   <script>
     // Main App Controller
@@ -530,15 +533,18 @@
       document.getElementById("room-badge-btn").style.display = "inline-flex";
       document.getElementById("room-code-val").innerText = room.room_id;
 
+      const auditPanel = document.getElementById("action-ticker");
       if (room.status === "LOBBY") {
         document.getElementById("lobby-screen").style.display = "flex";
         document.getElementById("lobby-roster-panel").style.display = "block";
         document.getElementById("game-table").style.display = "none";
         document.getElementById("game-over-modal").style.display = "none";
+        if (auditPanel) auditPanel.style.display = "none";
         renderLobbyRoster(room);
       } else {
         document.getElementById("lobby-screen").style.display = "none";
         document.getElementById("game-table").style.display = "flex";
+        if (auditPanel) auditPanel.style.display = "flex";
         renderActiveGame(room);
       }
 
@@ -936,25 +942,29 @@
     function toggleAuditLog() {
       auditExpanded = !auditExpanded;
       const panel = document.getElementById("action-ticker");
-      const btn = document.getElementById("audit-toggle-btn");
       if (panel) panel.classList.toggle("expanded", auditExpanded);
-      if (btn) btn.innerText = auditExpanded ? "▼ Collapse Audit Log" : "▲ Expand Audit Log";
-      if (currentRoom) renderLogs(currentRoom.action_log);
+      if (currentRoom) {
+        renderLogs(currentRoom.action_log);
+        if (currentRoom.status === "PLAYING") {
+          setTimeout(() => renderActiveGame(currentRoom), 250);
+        }
+      }
     }
 
     function renderLogs(logs) {
       const container = document.getElementById("ticker-lines");
       const countEl = document.getElementById("audit-count-label");
+      const tabCountEl = document.getElementById("audit-count-tab");
       if (!container) return;
       const allLogs = logs || [];
       if (countEl) countEl.innerText = allLogs.length;
+      if (tabCountEl) tabCountEl.innerText = allLogs.length;
       container.innerHTML = "";
-      const visibleLogs = auditExpanded ? allLogs.slice().reverse() : allLogs.slice(-4).reverse();
-      visibleLogs.forEach((line, idx) => {
+      allLogs.slice().reverse().forEach((line, idx) => {
         const eventNum = allLogs.length - idx;
         const div = document.createElement("div");
         div.className = "ticker-entry";
-        div.innerText = auditExpanded ? `#${eventNum} • ${line}` : line;
+        div.innerText = `#${eventNum} • ${line}`;
         container.appendChild(div);
       });
     }

@@ -137,12 +137,13 @@ body {
 .main-viewport {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   position: relative;
   overflow: hidden;
-  padding: 10px;
+  padding: 10px 14px;
 }
 
 /* Buttons */
@@ -245,11 +246,12 @@ body {
 .slot-badge { font-size: 0.65rem; color: #94a3b8; }
 .rules-summary { font-size: 0.72rem; color: #94a3b8; line-height: 1.4; margin-top: 14px; border-top: 1px solid #334155; padding-top: 10px; }
 
-/* The Casino Table Felt */
+/*The Casino Table Felt */
 .casino-table {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   max-width: 1120px;
-  height: 94%;
+  height: 96%;
   background:
     radial-gradient(ellipse at 50% 48%, rgba(255, 215, 120, 0.07) 0%, transparent 55%),
     radial-gradient(ellipse at center, #145e35 0%, #09381d 68%, #031a0d 100%);
@@ -1014,44 +1016,67 @@ body {
   border-radius: 999px;
 }
 
-/* Expandable Audit Log Tab / Drawer */
+/* Non-Obstructing Side-Docked Audit Log Drawer (Hidden on Lobby, Docked Beside Table) */
 .action-ticker-panel {
-  height: 54px;
-  width: 100%;
-  max-width: 1120px;
+  height: 94%;
+  width: 34px;
   background: #0f172a;
   border: 1px solid #334155;
-  border-radius: 10px;
-  padding: 4px 12px 6px;
-  margin-top: 6px;
-  display: flex;
+  border-radius: 14px;
+  display: none;
   flex-direction: column;
   font-size: 0.75rem;
   color: #94a3b8;
   flex-shrink: 0;
-  transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.24s ease;
-  position: relative;
-  z-index: 110;
+  transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
+  overflow: hidden;
+  z-index: 40;
 }
 .action-ticker-panel.expanded {
-  height: 260px;
-  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.85);
+  width: 300px;
+  padding: 10px 12px;
   border-color: var(--gold);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75);
 }
-.ticker-header {
+.ticker-collapsed-tab {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+  text-transform: uppercase;
+  gap: 8px;
+}
+.ticker-collapsed-tab:hover {
+  background: #1e293b;
+}
+.action-ticker-panel.expanded .ticker-collapsed-tab {
+  display: none;
+}
+.ticker-header {
+  display: none;
+  align-items: center;
   justify-content: space-between;
-  padding-bottom: 3px;
-  margin-bottom: 3px;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.7);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.85);
   cursor: pointer;
   flex-shrink: 0;
 }
+.action-ticker-panel.expanded .ticker-header {
+  display: flex;
+}
 .ticker-title {
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 800;
-  color: #cbd5e1;
+  color: #f8fafc;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   display: inline-flex;
@@ -1063,7 +1088,7 @@ body {
   border: 1px solid #475569;
   color: var(--gold);
   border-radius: 6px;
-  padding: 1px 8px;
+  padding: 2px 8px;
   font-size: 0.68rem;
   font-weight: 800;
   cursor: pointer;
@@ -1072,13 +1097,19 @@ body {
   background: #334155;
 }
 .ticker-content {
+  display: none;
   flex: 1;
   overflow-y: auto;
   padding-right: 4px;
 }
+.action-ticker-panel.expanded .ticker-content {
+  display: block;
+}
 .ticker-entry {
-  margin-bottom: 3px;
-  line-height: 1.35;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed rgba(51, 65, 85, 0.45);
+  line-height: 1.38;
 }
 .ticker-entry:first-child { color: #f8fafc; font-weight: 700; }
 
