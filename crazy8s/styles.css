@@ -178,8 +178,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 80;
-  background: rgba(5, 11, 7, 0.9);
+  z-index: 600;
+  background: rgba(5, 11, 7, 0.92);
   backdrop-filter: blur(8px);
 }
 .lobby-content {
@@ -1016,31 +1016,43 @@ body {
   border-radius: 999px;
 }
 
-/* Non-Obstructing Side-Docked Audit Log Drawer (Hidden on Lobby, Docked Beside Table) */
+/* Expandable Right-Hand Sidebar Audit Log (Strictly Hidden on Home/Lobby Screen) */
+body:not(.game-active) .action-ticker-panel {
+  display: none !important;
+}
 .action-ticker-panel {
-  height: 94%;
-  width: 34px;
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 14px;
-  display: none;
+  position: fixed;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  background: rgba(15, 23, 42, 0.97);
+  border-left: 2px solid #334155;
+  display: flex;
   flex-direction: column;
-  font-size: 0.75rem;
+  padding: 12px 14px;
+  font-size: 0.76rem;
   color: #94a3b8;
-  flex-shrink: 0;
-  transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease;
-  overflow: hidden;
-  z-index: 40;
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.25s ease;
+  z-index: 250;
 }
 .action-ticker-panel.expanded {
-  width: 300px;
-  padding: 10px 12px;
-  border-color: var(--gold);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75);
+  transform: translateX(0);
+  border-left-color: var(--gold);
+  box-shadow: -12px 0 36px rgba(0, 0, 0, 0.85);
 }
 .ticker-collapsed-tab {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  left: -36px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 150px;
+  background: #0f172a;
+  border: 2px solid var(--gold);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1048,33 +1060,27 @@ body {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.08em;
   color: var(--gold);
   text-transform: uppercase;
-  gap: 8px;
+  box-shadow: -4px 4px 16px rgba(0, 0, 0, 0.65);
 }
 .ticker-collapsed-tab:hover {
   background: #1e293b;
 }
-.action-ticker-panel.expanded .ticker-collapsed-tab {
-  display: none;
-}
 .ticker-header {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid rgba(51, 65, 85, 0.85);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.9);
   cursor: pointer;
   flex-shrink: 0;
 }
-.action-ticker-panel.expanded .ticker-header {
-  display: flex;
-}
 .ticker-title {
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 800;
   color: #f8fafc;
   letter-spacing: 0.04em;
@@ -1088,8 +1094,8 @@ body {
   border: 1px solid #475569;
   color: var(--gold);
   border-radius: 6px;
-  padding: 2px 8px;
-  font-size: 0.68rem;
+  padding: 3px 9px;
+  font-size: 0.7rem;
   font-weight: 800;
   cursor: pointer;
 }
@@ -1097,19 +1103,15 @@ body {
   background: #334155;
 }
 .ticker-content {
-  display: none;
   flex: 1;
   overflow-y: auto;
   padding-right: 4px;
 }
-.action-ticker-panel.expanded .ticker-content {
-  display: block;
-}
 .ticker-entry {
-  margin-bottom: 6px;
-  padding-bottom: 5px;
-  border-bottom: 1px dashed rgba(51, 65, 85, 0.45);
-  line-height: 1.38;
+  margin-bottom: 7px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(51, 65, 85, 0.5);
+  line-height: 1.4;
 }
 .ticker-entry:first-child { color: #f8fafc; font-weight: 700; }
 

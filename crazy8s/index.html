@@ -14,7 +14,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="styles.css?v=20261024v8">
+  <link rel="stylesheet" href="styles.css?v=20261024v9">
 </head>
 <body>
 
@@ -318,9 +318,9 @@
   <div id="vfx-layer" class="vfx-overlay"></div>
 
   <!-- Application Logic Modules (cache-busted for GitHub Pages) -->
-  <script src="engine.js?v=20261024v8"></script>
-  <script src="network.js?v=20261024v8"></script>
-  <script src="ux_effects.js?v=20261024v8"></script>
+  <script src="engine.js?v=20261024v9"></script>
+  <script src="network.js?v=20261024v9"></script>
+  <script src="ux_effects.js?v=20261024v9"></script>
 
   <script>
     // Main App Controller
@@ -535,6 +535,7 @@
 
       const auditPanel = document.getElementById("action-ticker");
       if (room.status === "LOBBY") {
+        document.body.classList.remove("game-active");
         document.getElementById("lobby-screen").style.display = "flex";
         document.getElementById("lobby-roster-panel").style.display = "block";
         document.getElementById("game-table").style.display = "none";
@@ -542,6 +543,7 @@
         if (auditPanel) auditPanel.style.display = "none";
         renderLobbyRoster(room);
       } else {
+        document.body.classList.add("game-active");
         document.getElementById("lobby-screen").style.display = "none";
         document.getElementById("game-table").style.display = "flex";
         if (auditPanel) auditPanel.style.display = "flex";
