@@ -682,6 +682,7 @@ body {
   font-size: 0.85rem;
   font-weight: 800;
   line-height: 1;
+  align-self: flex-start;
 }
 .card-center-pip {
   font-size: 1.8rem;
@@ -689,7 +690,10 @@ body {
   align-self: center;
   margin: auto 0;
 }
-.card-corner.bottom { transform: rotate(180deg); }
+.card-corner.bottom {
+  align-self: flex-end;
+  transform: rotate(180deg);
+}
 
 .card-special-ribbon {
   position: absolute;
